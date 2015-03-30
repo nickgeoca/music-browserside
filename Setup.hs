@@ -1,8 +1,3 @@
--- Adapted from the canvas-simple from the Haste repository at:
--- https://github.com/valderman/haste-compiler/blob/master/examples
--- In this version the canvas tag has been created dinamically with the Perch library
-
-
 import Haste
 import Haste.Graphics.Canvas
 import Haste.Perch
@@ -10,6 +5,10 @@ import Prelude hiding(id,div)
 import Haste.HPlay.View
 import Data.Ratio
 
+
+----------------------------------------------------------------------------------------------------                      
+-- Main code
+----------------------------------------------------------------------------------------------------  
 -- | Then you grab a canvas object...
 -- main :: IO ()
 main = do
@@ -84,8 +83,9 @@ qnShape (x,y) = fill $ do circle (x,y) (qnSize gSGS); line (x-29,y-50) (x+20,y+2
 
 musDur n d = n % d :: Ratio Int -- % :: Integral a => a -> a -> Ratio a infixl 7
 
-
---------------------------------------------------
+----------------------------------------------------------------------------------------------------                      
+-- Music Types
+----------------------------------------------------------------------------------------------------
 -- Notes/Rest Modifiers/Annotations
 -- Modifies notes through time. Might be useful for parallel notes, such as Arpeggio
 type KeyH = Int          -- TODO: This should be a hash style value.                                                      
@@ -131,6 +131,7 @@ type Position = Duration
 type Music = [(Position, MusElm)]          -- TODO: The global modifiers/annotations probably don't need Position
 
 
+
 --------------------------------------------------
 -- Example             
 -- qnE4Slur1: quarter note; pitch e4; slur 1/2 (2 note slur)
@@ -168,8 +169,9 @@ musicTest = [(musDur 0 0, ModElm  keyC),
 --                                     where 
                       
 
---------------------------------------------------
+----------------------------------------------------------------------------------------------------                      
 -- Notes, ideas, etc. Might be out of date
+----------------------------------------------------------------------------------------------------
 --
 -- Duration depends on time signature. Ex: 4/4 will be 64
 -- musicScoreChunkify (MusElem elm scr) xss xs dur = xs
