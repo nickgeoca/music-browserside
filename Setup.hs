@@ -72,11 +72,13 @@ staffShape (x,y) dx = stroke $ do
   where fn = \x d y -> line (x, y) (x + d, y) -- (x1, y1) (x2, y2)
   
   -- Graphics Master Settings
-data ScoreGraphicSettings = ScoreGraphicSettings { staffLineDy :: Double  
-                     , qnSize :: Double
+data ScoreGraphicSettings = ScoreGraphicSettings
+                            { staffLineDy :: Double  
+                            , qnSize :: Double
+                            , measureHeight :: Double
                      } deriving (Show)   
 
-gSGS = ScoreGraphicSettings 10 5
+gSGS = ScoreGraphicSettings 10 5 40
 
 -- qN
 qnShape (x,y) = fill $ do circle (x,y) (qnSize gSGS); line (x-29,y-50) (x+20,y+20)
@@ -177,7 +179,25 @@ musicSimple = [(musDur 0 0, NoteElm qnF4),
                (musDur 2 4, NoteElm qnF4),
                (musDur 3 4, NoteElm qnF4)]           
 
-            
+
+type DeltaDist = Double                 -- Dx,Dy, etc. Attempts to add clarity
+data MeasureLocation = BottomOfStaff |  -- Treble clef looks aligned this way
+                       NoteLocDy MeasureLocation DeltaDist  -- Dy is each note distance up staff
+
+
+type Perc   = Float                       
+type DimXY  = (Float, Float)
+type PercXY = (Float, Float)     -- Percent (x,y)                
+data Annotation = Annotation { dimensions :: DimXY,
+                               placePoint :: PercXY,  -- (0,0) is upper left most. TODO: While whole note & quarter note base looks the same, the line upward from quaternote changes its dimensions. There are tradeoffs
+                               measLoc    :: MeasureLocation,
+                               bufferX    :: Perc    -- Buffers to next annotation. Percent of X dimension
+                             }
+              
+-- TODO: Is best way of tieing constant dimensions with a global? E.g. staff measurements.
+--         This could change in future, if staff measurements were to be dynamic.                   
+noteAnno = Annotation (5,5) (0.5, 0.5) (NoteLocDy BottomOfStaff ((measureHeight gSGS) / 8)) 2
+
 -- drawMusic mus staff = case mus of ((_, ModElm  m):xs) ->
                                     
 --                                   ((d, NoteElm n):xs) -> result  
