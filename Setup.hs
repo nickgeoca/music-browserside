@@ -135,22 +135,28 @@ type Music = [(Position, MusElm)]          -- TODO: The global modifiers/annotat
 --------------------------------------------------
 -- Example             
 -- qnE4Slur1: quarter note; pitch e4; slur 1/2 (2 note slur)
+qnE4Slur1 :: Note
 qnE4Slur1 = Note (musDur 1 4) 52 [(ModRel
                                    (0,      -- 'hashkey' of 0
                                     2,      -- Two notes total
                                     Slur))]             
 
 -- qnG4Slur2: quarter note; pitch g4; slur 2/2 (2 note slur)
+qnG4Slur2 :: Note
 qnG4Slur2 = Note (musDur 1 4) 55 [(ModRel
                                    (0,      -- 'hashkey' of 0
                                     2,      -- Two notes total
                                     Slur))]                         
 
 -- enF4: eigth note; pitch f4
+enF4 :: Note
 enF4 = Note (musDur 1 8) 53 []
+trebClef :: GlobalMod
 trebClef = ClefSym Treble
+keyC :: GlobalMod
 keyC = KeySym 0
-       
+
+musicTest :: Music       
 musicTest = [(musDur 0 0, ModElm  keyC),
              (musDur 0 0, ModElm  trebClef),
              (musDur 0 0, NoteElm qnE4Slur1),
@@ -159,6 +165,16 @@ musicTest = [(musDur 0 0, ModElm  keyC),
              (musDur 2 4, NoteElm enF4),
              (musDur 3 4, NoteElm enF4)]
 
+qnF4 :: Note
+qnF4 =  Note (musDur 1 4) 53 []            
+-- Four successive F quarter notes. Assume treble clef & 4/4 time.
+-- Measure will look like link below. Without treble clef and 4/4 timing.
+-- http://stringstudies.com/wp-content/uploads/2013/09/5.gif        
+musicTest :: Music       
+musicSimple = [(musDur 0 0, NoteElm qnF4),
+               (musDur 0 0, NoteElm qnF4),
+               (musDur 0 0, NoteElm qnF4),
+               (musDur 0 0, NoteElm qnF4)]           
 
             
 -- drawMusic mus staff = case mus of ((_, ModElm  m):xs) ->
