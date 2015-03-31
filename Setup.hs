@@ -165,16 +165,17 @@ musicTest = [(musDur 0 0, ModElm  keyC),
              (musDur 2 4, NoteElm enF4),
              (musDur 3 4, NoteElm enF4)]
 
-qnF4 :: Note
-qnF4 =  Note (musDur 1 4) 53 []            
+qnF4 :: Note -- Quarter note. F4
+qnF4 =  Note (musDur 1 4) 53 []
+        
 -- Four successive F quarter notes. Assume treble clef & 4/4 time.
 -- Measure will look like link below. Without treble clef and 4/4 timing.
 -- http://stringstudies.com/wp-content/uploads/2013/09/5.gif        
-musicTest :: Music       
+musicSimple :: Music       
 musicSimple = [(musDur 0 0, NoteElm qnF4),
-               (musDur 0 0, NoteElm qnF4),
-               (musDur 0 0, NoteElm qnF4),
-               (musDur 0 0, NoteElm qnF4)]           
+               (musDur 1 4, NoteElm qnF4),
+               (musDur 2 4, NoteElm qnF4),
+               (musDur 3 4, NoteElm qnF4)]           
 
             
 -- drawMusic mus staff = case mus of ((_, ModElm  m):xs) ->
