@@ -196,7 +196,6 @@ instance Num Point where
   (x1,y1) + (x2,y2) = (x1+x2, y1+y2)
 
 -- TODO: Using 'list' method right now, but may change logic away from list.
--- TODO: In 'list' method, finish logic of forward/backward. Possibly reversesd
 noteDYMeasure
   startNote note = let dis = abs $ startNote - note
                        s = startNote `mod` 12
@@ -217,7 +216,7 @@ drawCanvas_ :: Music -> [Picture ()] -> Double -> [Picture ()]
 drawCanvas_ []          pics _        = pics  
 drawCanvas_ ((p,e):mus) pics xDispAcc = drawCanvas_ mus (pic:pics) (xDispAcc + xDispNew)
   where (pic, xDispNew) = case e of 
-                           NoteElm n -> let coor1 = (0, (measureHeight gSGS) - (noteDy Treble n))  -- BUG
+                           NoteElm n -> let coor1 = (0, (measureHeight gSGS) - (noteDy Treble n))
                                             coor2 = coor1 + (xDispAcc, 0)
                                         in (notePic n coor2, (bufferX noteAnno))
                          -- RestElm r -> 2
