@@ -1,10 +1,13 @@
+{-# LANGUAGE TypeSynonymInstances #-}
+{-# LANGUAGE FlexibleInstances #-}
+
 import Haste
 import Haste.Graphics.Canvas
 import Haste.Perch
 import Prelude hiding(id,div)
 import Haste.HPlay.View
 import Data.Ratio
-
+import GHC.Float
 
 ----------------------------------------------------------------------------------------------------                      
 -- Main code
@@ -16,53 +19,20 @@ main = do
   (flip build) body $                     -- build :: Elem -> Client Elem
      center $ canvas ! id "canvas" 
                      ! Haste.Perch.style "border: 1px solid black;" 
-                     ! atr "width" "900" 
-                     ! height "4000"
+                     ! atr "width" "600" 
+                     ! height "400"
                      $ noHtml
   Just can <- getCanvasById "canvas"
-  runBody mouse
   -- return ()
   -- render can $ do
-  render can $ do 
-    sequence_ [ translate ( 10 + x_ * 120, 10 + y_ * 80) $ do 
-      staffShape (0,0) 100 
-      qnShape (0, 20); qnShape (10, 0); qnShape (20, 25); qnShape (30, 0) ; qnShape (40, 40); qnShape (50, 20)  
-      | x_ <-[0..5], y_ <-[0..50]]
-  -- animate can 0 255
-  
-  -- show mouse events
-mouse :: Widget ()
-mouse= do
-    wraw (div  ! Haste.Perch.style "height:100px;background-color:lightgreen;position:relative" $ h1 "Mouse events here")
-                            `fire` OnMouseOut
-                            `fire` OnMouseOver
-                            `fire` OnMouseDown
-                            `fire` OnMouseMove
-                            `fire` OnMouseUp
-                            `fire` OnClick
-                            `fire` OnDblClick
-                            `fire` OnKeyPress
-                            `fire` OnKeyDown
-                            `fire` OnKeyUp
-    evdata <- getEventData
-    wraw $ p << ( (evName evdata) ++" "++ show (evData evdata))
-
--- | A 40*40 square with a 20*20 square inside of it and a line running
---   through it.
-squareShape :: Shape ()
-squareShape = do
-  rect (-20, -20) (20, 20)
-  rect (-10, -10) (10, 10)
-  line (-20, -20) (20, 20)
-
--- | You can stroke any shape to get a "wireframe" version of them.
-square :: Picture ()
-square = stroke squareShape
-
--- | Or you can fill them.
-filledSquare :: Picture ()
-filledSquare = fill squareShape
-
+  render can $ do
+    translate (20,20) $ do
+    staffShape (0,0) 100
+    sequence_ $ drawCanvas musicSimple
+  --  sequence_ [ translate ( 10 + x_ * 120, 10 + y_ * 80) $ do 
+  --    staffShape (0,0) 100 
+  --    qnShape (0, 20); qnShape (10, 0); qnShape (20, 25); qnShape (30, 0) ; qnShape (40, 40); qnShape (50, 20)  
+--      | x_ <-[0..5], y_ <-[0..50]]
 
 
 -- staffShape :: Shape ()
@@ -114,7 +84,7 @@ type Duration   = Ratio Int
 type Pitch      = Int            -- Absolute: C0=~16.35Hz,0; C1,12; C2,24
 -- Types: Layer 2
 data Rest  = Rest Duration       [NoteRestMod]  
-data Note  = Note Duration Pitch [NoteRestMod]  
+data Note  = Note {dur::Duration, pitch::Pitch, mods::[NoteRestMod]}  
 
 --------------------------------------------------
 -- Global Modifiers/Annotations
@@ -169,42 +139,90 @@ musicTest = [(musDur 0 0, ModElm  keyC),
 
 qnF4 :: Note -- Quarter note. F4
 qnF4 =  Note (musDur 1 4) 53 []
+qnG4 =  Note (musDur 1 4) 55 []
+qnA4 =  Note (musDur 1 4) 57 []
+qnB4 =  Note (musDur 1 4) 59 []
         
 -- Four successive F quarter notes. Assume treble clef & 4/4 time.
 -- Measure will look like link below. Without treble clef and 4/4 timing.
 -- http://stringstudies.com/wp-content/uploads/2013/09/5.gif        
 musicSimple :: Music       
 musicSimple = [(musDur 0 0, NoteElm qnF4),
-               (musDur 1 4, NoteElm qnF4),
-               (musDur 2 4, NoteElm qnF4),
-               (musDur 3 4, NoteElm qnF4)]           
+               (musDur 1 4, NoteElm qnG4),
+               (musDur 2 4, NoteElm qnA4),
+               (musDur 3 4, NoteElm qnB4)]           
 
 
 type DeltaDist = Double                 -- Dx,Dy, etc. Attempts to add clarity
 data MeasureLocation = BottomOfStaff |  -- Treble clef looks aligned this way
                        NoteLocDy MeasureLocation DeltaDist  -- Dy is each note distance up staff
+noteAnnoDy nAn = fn $ measLoc nAn
+                where fn (NoteLocDy _ dy) = dy
 
-
-type Perc   = Float                       
-type DimXY  = (Float, Float)
-type PercXY = (Float, Float)     -- Percent (x,y)                
+type Perc   = Double                       
+type DimXY  = (Double, Double)
+type PercXY = (Double, Double)     -- Percent (x,y)                
 data Annotation = Annotation { dimensions :: DimXY,
-                               placePoint :: PercXY,  -- (0,0) is upper left most. TODO: While whole note & quarter note base looks the same, the line upward from quaternote changes its dimensions. There are tradeoffs
+                               centerPoint:: PercXY,  -- (0,0) is upper left most. TODO: While whole note & quarter note base looks the same, the line upward from quaternote changes its dimensions. There are tradeoffs
                                measLoc    :: MeasureLocation,
-                               bufferX    :: Perc    -- Buffers to next annotation. Percent of X dimension
+                               bufferX    :: Double   -- Displacement to next annotation. (uses percent of X dimension to scale)
                              }
               
 -- TODO: Is best way of tieing constant dimensions with a global? E.g. staff measurements.
---         This could change in future, if staff measurements were to be dynamic.                   
-noteAnno = Annotation (5,5) (0.5, 0.5) (NoteLocDy BottomOfStaff ((measureHeight gSGS) / 8)) 2
+--         This could change in future, if staff measurements were to be dynamic.
+noteAnno = Annotation (5,5)    (0.5, 0.5) (NoteLocDy BottomOfStaff ((measureHeight gSGS) / 8)) (4 * (fst $ dimensions noteAnno))
 
--- drawMusic mus staff = case mus of ((_, ModElm  m):xs) ->
-                                    
---                                   ((d, NoteElm n):xs) -> result  
---                                   ((d, RestElm r):xs) -> result
---                                   (_) ->
---                                     where 
-                      
+notePic n (x,y) = let (num, denom) = (numerator $ dur n, denominator $ dur n)
+                  in case (num, denom) of
+                      (1,4) -> fill $ do circle (x,y) (fst $ dimensions noteAnno); line (x-29,y-50) (x+20,y+20)
+                      _     -> fill $ do circle (x,y) (fst $ dimensions noteAnno); line (x-29,y-50) (x+20,y+20)
+
+           
+class Dy a where
+  noteDy :: Clef -> a -> Double
+instance Dy Note where
+  noteDy clef note  = noteDy clef (pitch note)
+instance Dy Pitch where
+  noteDy clef pitch = let start = case clef of
+                                   Treble -> 52 -- E4
+                                   Bass   -> 31 -- G2
+                                   Alto   -> 41 -- F3
+                                   Tenor  -> 38 -- D3
+                          dy     = noteAnnoDy noteAnno
+                          dCount = fromIntegral $ noteDYMeasure start pitch
+                      in dy * dCount
+  
+instance Num Point where
+  (x1,y1) + (x2,y2) = (x1+x2, y1+y2)
+
+-- TODO: Using 'list' method right now, but may change logic away from list.
+-- TODO: In 'list' method, finish logic of forward/backward. Possibly reversesd
+noteDYMeasure
+  startNote note = let dis = abs $ startNote - note
+                       s = startNote `mod` 12
+                       d1 = dis `mod` 12
+                       d2 = (quot dis 12) * 7
+                       ls = cycle ([1,0,1,0,1]++[1,0,1,0,1,0,1])
+                       ds = sum $ take d1 $ drop s ls
+                       forward  = d2 + ds
+                       backward = d2 + 7 - ds
+                   in if (startNote - note) < 0 then forward else backward
+
+
+                                                         
+drawCanvas :: Music -> [Picture ()]
+drawCanvas m = drawCanvas_ m [] 0
+
+drawCanvas_ :: Music -> [Picture ()] -> Double -> [Picture ()]              
+drawCanvas_ []          pics _        = pics  
+drawCanvas_ ((p,e):mus) pics xDispAcc = drawCanvas_ mus (pic:pics) (xDispAcc + xDispNew)
+  where (pic, xDispNew) = case e of 
+                           NoteElm n -> let coor1 = (0, (measureHeight gSGS) - (noteDy Treble n))  -- BUG
+                                            coor2 = coor1 + (xDispAcc, 0)
+                                        in (notePic n coor2, (bufferX noteAnno))
+                         -- RestElm r -> 2
+                         -- ModElm  m -> 3
+        
 
 ----------------------------------------------------------------------------------------------------                      
 -- Notes, ideas, etc. Might be out of date
