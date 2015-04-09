@@ -49,14 +49,13 @@ xpMusic
     xpTriple (xpElem "durationTest" xpickle)
              (xpElem "pitch" $ xpFilterCont (hasName "octave") $ xpElem "octave" xpickle)
              (xpOption (xpAttr "blah" xpPrim))
-
   where findPart1 a = xpElem "score-partwise" $
                       xpFilterCont (hasName "part") $
                       xpElem "part" $ a
         findMeas1 a = xpFilterCont (hasName "measure") $ xpElem "measure" $ a
         filtNote1 a = xpFilterCont (hasName "note") $ a
-        keepElems ls= xpFilterCont $ foldr (<+>) zeroArrow $ map hasName ls
         devFilt   a = findPart1 $ findMeas1 $ filtNote1 $ a 
+        keepElems ls= xpFilterCont $ foldr (<+>) zeroArrow $ map hasName ls
     
 --    (Pos, MusElm) -- (1, NoteElm $ Note (1%4) 48 []) -- Note Duration Pitch [NoteRestMod]
     -- xpPair (xpElem "position" xpickle :: PU Position) undefined -- (1, NoteElm $ Note (1%4) 48 [])
