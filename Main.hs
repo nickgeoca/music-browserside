@@ -28,23 +28,18 @@ instance XmlPickler Position where
   
 xpMusic :: PU Music2
 xpMusic
-  = devFilt $
-    xpList $
-    xpElem "note" $
-    keepElems ["pitch", "durationTest"] $
+  = startPt $
+    xpList $ xpElem "note" $                       -- Create list out of selected note elems
+    keepElems ["pitch", "durationTest"] $          -- Ignore other elems
     xpWrap (uncurry3 Note2,
             \t -> (dur2 t, pitch2 t, mods2 t)) $
     xpTriple (xpElem "durationTest" xpickle)
              (xpElem "pitch" $ keepElem "octave" $ xpElem "octave" xpickle)
              (xpOption (xpAttr "blah" xpPrim))
-  where findPart1 a = xpElem "score-partwise" $
-                      keepElem "part" $
-                      xpElem "part" $ a
-        findMeas1 a = keepElem "measure" $
-                      xpElem "measure" $ a
-        devFilt   a = findPart1 $
-                      findMeas1 $
-                      keepElem "note" $ a 
+  where startPt a = xpElem "score-partwise" $                -- Select
+                    keepElem "part"    $ xpElem "part"    $  -- Fitler, select
+                    keepElem "measure" $ xpElem "measure" $  -- Filter, select
+                    keepElem "note" $ a                      -- Filter
         
 ----------------------------------------------------------------------------------------------------                      
 -- Helper functions
