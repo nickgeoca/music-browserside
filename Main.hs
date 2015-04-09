@@ -31,9 +31,9 @@ xpMusic
   = startPt $
     xpList $ xpElem "note" $                       -- Create list out of selected note elems
     keepElems ["pitch", "durationTest"] $          -- Ignore other elems
-    xpWrap (uncurry3 Note2,
+    xpWrap (uncurry3 Note2,                        -- 
             \t -> (dur2 t, pitch2 t, mods2 t)) $
-    xpTriple (xpElem "durationTest" xpickle)
+    xpTriple (xpElem "durationTest" xpickle)       -- 
              (xpElem "pitch" $ keepElem "octave" $ xpElem "octave" xpickle)
              (xpOption (xpAttr "blah" xpPrim))
   where startPt a = xpElem "score-partwise" $                -- Select
@@ -45,11 +45,11 @@ xpMusic
 -- Helper functions
 ----------------------------------------------------------------------------------------------------
 keepElems :: [String] -> PU a -> PU a
-keepElems ls = let msum' = foldr (<+>) zeroArrow  -- (hasName "a") <+> (hasName "b")
+keepElems ls = let msum' = foldr (<+>) zeroArrow  -- (hasName "a") <+> (hasName "b") ... 
                in xpFilterCont $ msum' (map hasName ls)
 
 keepElem :: String -> PU a -> PU a
-keepElem  x  = xpFilterCont (hasName x)
+keepElem x = xpFilterCont (hasName x)
 
 ----------------------------------------------------------------------------------------------------                      
 -- Example, figuring stuff out
