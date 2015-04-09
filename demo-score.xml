@@ -18,7 +18,66 @@
       <part-name>MusicXML Part</part-name>
     </score-part>
   </part-list>
-  <!--=========================================================-->
+  <!--=========================================================--> 
+  <part> <!-- id="P1"> -->
+    <measure> <!-- number="1"> -->
+      <attributes>
+        <divisions>1</divisions>
+        <key>
+          <fifths>0</fifths>
+          <mode>major</mode>
+        </key>
+        <time symbol="common">
+          <beats>4</beats>
+          <beat-type>4</beat-type>
+        </time>
+        <clef>
+          <sign>G</sign>
+          <line>2</line>
+        </clef>
+      </attributes>
+      <note>
+	<durationTest>1%4</durationTest>
+        <pitch>
+          <step>F</step>
+          <octave>4</octave>
+        </pitch>
+        <duration>1</duration>
+        <voice>1</voice>
+        <type>quarter</type>
+      </note>
+      <note>
+	<durationTest>1%4</durationTest>
+        <pitch>
+          <step>G</step>
+          <octave>4</octave>
+        </pitch>
+        <duration>1</duration>
+        <voice>1</voice>
+        <type>quarter</type>
+      </note>
+      <note>
+	<durationTest>1%4</durationTest>
+        <pitch>
+          <step>A</step>
+          <octave>4</octave>
+        </pitch>
+        <duration>1</duration>
+        <voice>1</voice>
+        <type>quarter</type>
+      </note>
+      <note>
+	<durationTest>1%4</durationTest>
+        <pitch>
+          <step>B</step>
+          <octave>4</octave>
+        </pitch>
+        <duration>1</duration>
+        <voice>1</voice>
+        <type>quarter</type>
+      </note>
+    </measure>  
+  <!--=========================================================--> <!--
   <part id="P1">
     <measure number="1">
       <attributes>
@@ -72,8 +131,8 @@
         <voice>1</voice>
         <type>quarter</type>
       </note>
-    </measure>
-    <!--=======================================================-->
+    </measure>  -->
+    <!--=======================================================--><!--
     <measure number="2">
       <note>
         <pitch>
@@ -111,7 +170,7 @@
         <voice>1</voice>
         <type>quarter</type>
       </note>
-    </measure>
-  </part>
+    </measure> -->
   <!--=========================================================-->
+  </part> 
 </score-partwise>

@@ -6,8 +6,9 @@ import Haste.Graphics.Canvas
 import Haste.Perch
 import Prelude hiding(id,div)
 import Haste.HPlay.View
-import Data.Ratio
 import GHC.Float
+import Data.Ratio
+import Music
 
 ----------------------------------------------------------------------------------------------------                      
 -- Main code
@@ -35,6 +36,10 @@ main = do
 --      | x_ <-[0..5], y_ <-[0..50]]
 
 
+----------------------------------------------------------------------------------------------------                      
+-- Old Graphics (still sort of used)
+----------------------------------------------------------------------------------------------------  
+
 -- staffShape :: Shape ()
 staffShape (x,y) dx = stroke $ do
   let dy = staffLineDy gSGS -- ScoreGraphicSettings
@@ -55,103 +60,11 @@ qnShape (x,y) = fill $ do circle (x,y) (qnSize gSGS); line (x-29,y-50) (x+20,y+2
 
 musDur n d = n % d :: Ratio Int -- % :: Integral a => a -> a -> Ratio a infixl 7
 
+  
+
 ----------------------------------------------------------------------------------------------------                      
--- Music Types
+-- Music Graphic Types
 ----------------------------------------------------------------------------------------------------
--- Notes/Rest Modifiers/Annotations
--- Modifies notes through time. Might be useful for parallel notes, such as Arpeggio
-type KeyH = Int          -- TODO: This should be a hash style value.                                                      
-type NoteTie a = (KeyH,  -- Not key in music sense. Key when matching up to other notes. Must be unique across types.
-                         -- Rough example, Crescendo of two notes: (a-note, key:0) (b-note) (c-note, key:0)
-                         -- The 'a' and 'c' should increase in time, but not 'b'. Would be more useful for slurs.
-                  Int,   -- Number of notes it effects. This value does not decrement in case a decremented
-                         -- value is read before the initial value. e.g. notes are in parallel
-                  a)     -- Can be any type
--- Types: Layer 1
-data DynamicType   = Crescendo | Diminuendo
-data NoteRelatType = Slur | Arpeggio                              
--- Types: Layer 2
-data Accents       = Staccato | Tenuto        -- Staccato, Tenuto, etc
-type Dynamic       = NoteTie DynamicType      -- Crescendo, Diminuendo, etc
-type NoteRelat     = NoteTie NoteRelatType    -- Slur, Arpeggio, etc
--- Types: Layer 3
-data NoteRestMod   = ModAcc Accents | ModDyn Dynamic | ModRel NoteRelat
-
---------------------------------------------------
--- Notes/Rest                                                      
--- Types: Layer 1
-type Duration   = Ratio Int
-type Pitch      = Int            -- Absolute: C0=~16.35Hz,0; C1,12; C2,24
--- Types: Layer 2
-data Rest  = Rest Duration       [NoteRestMod]  
-data Note  = Note {dur::Duration, pitch::Pitch, mods::[NoteRestMod]}  
-
---------------------------------------------------
--- Global Modifiers/Annotations
--- Types: Layer 1                
-data Clef     = Treble | Bass | Alto | Tenor                    
-type Key      = Int               -- ???? Major Keys: C=0; G=1; D=2... clockwise order
--- Types: Layer 2
-data GlobalMod= ClefSym Clef | KeySym Key     -- Clef, Music key, etc
-
---------------------------------------------------
--- Top level music type
-data MusElm = NoteElm  Note
-             | RestElm Rest
-             | ModElm  GlobalMod
-type Position = Duration
-type Music = [(Position, MusElm)]          -- TODO: The global modifiers/annotations probably don't need Position
-
-
-
---------------------------------------------------
--- Example             
--- qnE4Slur1: quarter note; pitch e4; slur 1/2 (2 note slur)
-qnE4Slur1 :: Note
-qnE4Slur1 = Note (musDur 1 4) 52 [(ModRel
-                                   (0,      -- 'hashkey' of 0
-                                    2,      -- Two notes total
-                                    Slur))]             
-
--- qnG4Slur2: quarter note; pitch g4; slur 2/2 (2 note slur)
-qnG4Slur2 :: Note
-qnG4Slur2 = Note (musDur 1 4) 55 [(ModRel
-                                   (0,      -- 'hashkey' of 0
-                                    2,      -- Two notes total
-                                    Slur))]                         
-
--- enF4: eigth note; pitch f4
-enF4 :: Note
-enF4 = Note (musDur 1 8) 53 []
-trebClef :: GlobalMod
-trebClef = ClefSym Treble
-keyC :: GlobalMod
-keyC = KeySym 0
-
-musicTest :: Music       
-musicTest = [(musDur 0 0, ModElm  keyC),
-             (musDur 0 0, ModElm  trebClef),
-             (musDur 0 0, NoteElm qnE4Slur1),
-             (musDur 0 0, NoteElm enF4),
-             (musDur 1 4, NoteElm qnG4Slur2),
-             (musDur 2 4, NoteElm enF4),
-             (musDur 3 4, NoteElm enF4)]
-
-qnF4 :: Note -- Quarter note. F4
-qnF4 =  Note (musDur 1 4) 53 []
-qnG4 =  Note (musDur 1 4) 55 []
-qnA4 =  Note (musDur 1 4) 57 []
-qnB4 =  Note (musDur 1 4) 59 []
-        
--- Four successive F quarter notes. Assume treble clef & 4/4 time.
--- Measure will look like link below. Without treble clef and 4/4 timing.
--- http://stringstudies.com/wp-content/uploads/2013/09/5.gif        
-musicSimple :: Music       
-musicSimple = [(musDur 0 0, NoteElm qnF4),
-               (musDur 1 4, NoteElm qnG4),
-               (musDur 2 4, NoteElm qnA4),
-               (musDur 3 4, NoteElm qnB4)]           
-
 
 type DeltaDist = Double                 -- Dx,Dy, etc. Attempts to add clarity
 data MeasureLocation = BottomOfStaff |  -- Treble clef looks aligned this way
@@ -222,6 +135,55 @@ drawCanvas_ ((p,e):mus) pics xDispAcc = drawCanvas_ mus (pic:pics) (xDispAcc + x
                          -- RestElm r -> 2
                          -- ModElm  m -> 3
         
+----------------------------------------------------------------------------------------------------                      
+-- Examples
+----------------------------------------------------------------------------------------------------  
+-- Example             
+-- qnE4Slur1: quarter note; pitch e4; slur 1/2 (2 note slur)
+qnE4Slur1 :: Note
+qnE4Slur1 = Note (musDur 1 4) 52 [(ModRel
+                                   (0,      -- 'hashkey' of 0
+                                    2,      -- Two notes total
+                                    Slur))]             
+
+-- qnG4Slur2: quarter note; pitch g4; slur 2/2 (2 note slur)
+qnG4Slur2 :: Note
+qnG4Slur2 = Note (musDur 1 4) 55 [(ModRel
+                                   (0,      -- 'hashkey' of 0
+                                    2,      -- Two notes total
+                                    Slur))]                         
+
+-- enF4: eigth note; pitch f4
+enF4 :: Note
+enF4 = Note (musDur 1 8) 53 []
+trebClef :: GlobalMod
+trebClef = ClefSym Treble
+keyC :: GlobalMod
+keyC = KeySym 0
+
+musicTest :: Music       
+musicTest = [(musDur 0 0, ModElm  keyC),
+             (musDur 0 0, ModElm  trebClef),
+             (musDur 0 0, NoteElm qnE4Slur1),
+             (musDur 0 0, NoteElm enF4),
+             (musDur 1 4, NoteElm qnG4Slur2),
+             (musDur 2 4, NoteElm enF4),
+             (musDur 3 4, NoteElm enF4)]
+
+qnF4 :: Note -- Quarter note. F4
+qnF4 =  Note (musDur 1 4) 53 []
+qnG4 =  Note (musDur 1 4) 55 []
+qnA4 =  Note (musDur 1 4) 57 []
+qnB4 =  Note (musDur 1 4) 59 []
+        
+-- Four successive F quarter notes. Assume treble clef & 4/4 time.
+-- Measure will look like link below. Without treble clef and 4/4 timing.
+-- http://stringstudies.com/wp-content/uploads/2013/09/5.gif        
+musicSimple :: Music       
+musicSimple = [(musDur 0 0, NoteElm qnF4),
+               (musDur 1 4, NoteElm qnG4),
+               (musDur 2 4, NoteElm qnA4),
+               (musDur 3 4, NoteElm qnB4)]      
 
 ----------------------------------------------------------------------------------------------------                      
 -- Notes, ideas, etc. Might be out of date
