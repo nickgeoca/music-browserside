@@ -5,8 +5,10 @@
 import Text.XML.HXT.Core
 import Text.XML.HXT.HTTP
 import Data.Ratio
+import Control.Monad.State.Lazy
 import Music               -- This is to import the Music type
-  
+import Data.Default  
+
 main = do
   d <- runX $ xunpickleDocument xpMusic
     [withValidate no
@@ -25,7 +27,10 @@ instance XmlPickler Music2 where
 
 instance XmlPickler Position where
   xpickle = xpPrim :: PU (Ratio Int)
-  
+
+
+instance (Default a, Eq a) => Default (PU a) where def = xpDefault def $ xpZero ""
+
 xpMusic :: PU Music2
 xpMusic
   = startPt $
@@ -35,7 +40,7 @@ xpMusic
             \t -> (dur2 t, pitch2 t, mods2 t)) $
     xpTriple (xpElem "durationTest" xpickle)       -- 
              (xpElem "pitch" $ keepElem "octave" $ xpElem "octave" xpickle)
-             (xpOption (xpAttr "blah" xpPrim))
+             def
   where startPt a = xpElem "score-partwise" $                -- Select
                     keepElem "part"    $ xpElem "part"    $  -- Fitler, select
                     keepElem "measure" $ xpElem "measure" $  -- Filter, select
@@ -72,4 +77,11 @@ xpTitle
     <miscellaneous>
 -}
     
+-- newtype MaybeT m a = MaybeT { runMaybeT :: m (Maybe a) }
+-- instance Monad m => Monad (MaybeT m) where
+--   return = MaybeT . return . Just
+--   x >>= f = MaybeT $ do y <- runMaybeT x
+--                         Case y of Nothing -> return Nothing
+--                                   Maybe z -> runMaybeT $ f z)
 
+-- M a -> (a -> M b) -> M b   

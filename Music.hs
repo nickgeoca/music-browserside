@@ -48,6 +48,6 @@ data MusElm = NoteElm  Note
 type Position = Duration
 type Music = [(Position, MusElm)]          -- TODO: The global modifiers/annotations probably don't need Position
 
-data Note2  = Note2 {position2::Position, pitch2::Pitch, mods2::Maybe String}  deriving (Show)
+data Note2  = Note2 {dur2::Duration, pitch2::Pitch, mods2::String}  deriving (Show)
 type Music2 = [Note2]             
 
