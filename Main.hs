@@ -1,6 +1,7 @@
 {-# LANGUAGE TypeSynonymInstances #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 import Text.XML.HXT.Core
 import Text.XML.HXT.HTTP
@@ -39,7 +40,7 @@ instance XmlPickler Music2   where  xpickle = xpMusic
 instance XmlPickler Note2    where  xpickle = xpNote2
 instance XmlPickler Position where  xpickle = xpPrim :: PU (Ratio Int)
 
-instance (Default a, Eq a) => Default (PU a) where def = xpDefault def $ xpZero ""
+instance (Default a, Eq a) => Default (PU a) where def = xpDefault (def::a) $ xpZero ""
 
 xpMusic :: PU Music2
 xpMusic
