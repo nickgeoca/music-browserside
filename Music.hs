@@ -49,5 +49,5 @@ type Position = Duration
 type Music = [(Position, MusElm)]          -- TODO: The global modifiers/annotations probably don't need Position
 
 data Note2  = Note2 {dur2::Duration, pitch2::Pitch, mods2::String}  deriving (Show)
-type Music2 = [Note2]             
+type Music2 = [(Position, Note2)]             
 

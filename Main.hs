@@ -18,33 +18,35 @@ main = do
     -- >>> arrIO (\x -> do {print x; return x})
   mapM (putStrLn.show) d
   return ()
-
+  
 ----------------------------------------------------------------------------------------------------                      
 -- Music Type Pickling
 ----------------------------------------------------------------------------------------------------
-instance XmlPickler Music2 where
-  xpickle = xpMusic
-
-instance XmlPickler Position where
-  xpickle = xpPrim :: PU (Ratio Int)
-
+instance XmlPickler Music2   where  xpickle = xpMusic
+instance XmlPickler Note2    where  xpickle = xpNote2
+instance XmlPickler Position where  xpickle = xpPrim :: PU (Ratio Int)
 
 instance (Default a, Eq a) => Default (PU a) where def = xpDefault def $ xpZero ""
 
 xpMusic :: PU Music2
 xpMusic
   = startPt $
-    xpList $ xpElem "note" $                       -- Create list out of selected note elems
+    xpList $
+    xpPair def xpNote2 
+  where startPt a = xpElem "score-partwise" $                -- Select
+                    keepElem "part"    $ xpElem "part"    $  -- Fitler, select
+                    keepElem "measure" $ xpElem "measure" $  -- Filter, select
+                    keepElem "note" $ a                      -- Filter
+
+xpNote2 :: PU Note2
+xpNote2
+  = xpElem "note" $                       -- Create list out of selected note elems
     keepElems ["pitch", "durationTest"] $          -- Ignore other elems
     xpWrap (uncurry3 Note2,                        -- 
             \t -> (dur2 t, pitch2 t, mods2 t)) $
     xpTriple (xpElem "durationTest" xpickle)       -- 
              (xpElem "pitch" $ keepElem "octave" $ xpElem "octave" xpickle)
              def
-  where startPt a = xpElem "score-partwise" $                -- Select
-                    keepElem "part"    $ xpElem "part"    $  -- Fitler, select
-                    keepElem "measure" $ xpElem "measure" $  -- Filter, select
-                    keepElem "note" $ a                      -- Filter
         
 ----------------------------------------------------------------------------------------------------                      
 -- Helper functions
