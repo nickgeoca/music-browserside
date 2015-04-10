@@ -10,14 +10,27 @@ import Music               -- This is to import the Music type
 import Data.Default  
 
 main = do
-  d <- runX $ xunpickleDocument xpMusic
+  d <- runX $ xunpickleDocument xpMusic            -- TODO: Return Music2 instead of [Music2]
     [withValidate no
 --    ,withTrace 2
     ,withRemoveWS yes
-    ,withPreserveComment no] "demo-score.xml"
+    ,withPreserveComment no] "demo-score.xml"             
     -- >>> arrIO (\x -> do {print x; return x})
-  mapM (putStrLn.show) d
+  let d2 = postProcessing (head d)                     
+  mapM (putStrLn.show) d2
   return ()
+  where postProcessing m = evalState (mapM fixPositions m) (0%1)
+
+----------------------------------------------------------------------------------------------------                      
+-- Post Processing
+----------------------------------------------------------------------------------------------------
+fixPositions :: ((Position, Note2) -> State Position (Position, Note2))
+fixPositions (_, note) = do
+  let duration = dur2 note
+  position <- get             -- Get position for this note
+  put (position + duration)   -- Put position for next note
+  return (position, note) 
+               
   
 ----------------------------------------------------------------------------------------------------                      
 -- Music Type Pickling
@@ -32,7 +45,7 @@ xpMusic :: PU Music2
 xpMusic
   = startPt $
     xpList $
-    xpPair def xpNote2 
+    xpPair def xpickle 
   where startPt a = xpElem "score-partwise" $                -- Select
                     keepElem "part"    $ xpElem "part"    $  -- Fitler, select
                     keepElem "measure" $ xpElem "measure" $  -- Filter, select
