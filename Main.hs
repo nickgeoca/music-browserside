@@ -20,18 +20,18 @@ main = do
   let d2 = postProcessing (head d)                     
   mapM (putStrLn.show) d2
   return ()
-  where postProcessing m = evalState (mapM fixPositions m) (0%1)
+  where postProcessing = fixPositions 
 
 ----------------------------------------------------------------------------------------------------                      
 -- Post Processing
 ----------------------------------------------------------------------------------------------------
-fixPositions :: ((Position, Note2) -> State Position (Position, Note2))
-fixPositions (_, note) = do
-  let duration = dur2 note
-  position <- get             -- Get position for this note
-  put (position + duration)   -- Put position for next note
-  return (position, note) 
-               
+fixPositions :: [(Position, Note2)] -> Music2
+fixPositions m = evalState (mapM f m) (0%1)
+  where f (_, note) = do
+          let duration = dur2 note
+          position <- get             -- Get position for this note
+          put (position + duration)   -- Put position for next note
+          return (position, note)
   
 ----------------------------------------------------------------------------------------------------                      
 -- Music Type Pickling
@@ -39,8 +39,10 @@ fixPositions (_, note) = do
 instance XmlPickler Music2   where  xpickle = xpMusic
 instance XmlPickler Note2    where  xpickle = xpNote2
 instance XmlPickler Position where  xpickle = xpPrim :: PU (Ratio Int)
+instance XmlPickler MXmlStep where  xpickle = xpPrim
 
-instance (Default a, Eq a) => Default (PU a) where def = xpDefault (def::a) $ xpZero ""
+instance (Default a, Eq a) => Default (PU a) where
+  def = xpLift (def::a)
 
 xpMusic :: PU Music2
 xpMusic
@@ -59,9 +61,39 @@ xpNote2
     xpWrap (uncurry3 Note2,                        -- 
             \t -> (dur2 t, pitch2 t, mods2 t)) $
     xpTriple (xpElem "durationTest" xpickle)       -- 
-             (xpElem "pitch" $ keepElem "octave" $ xpElem "octave" xpickle)
+             (xpElem "pitch" xpPitch)
              def
-        
+
+f9 a s o = fromMXmlPitch s a o
+
+--               (b -> a) -> PU a -> (a -> PU b) -> PU b
+-- xpLift2 :: (a -> b -> c) -> PU a -> PU b -> PU c            
+xpLift2 f pa pb = xpSeq
+                  (\_ -> def)                   -- BUG
+                  (xpPair pa pb)
+                  (\a -> xpLift $ uncurry.f a)  
+
+-- xpLift2 f pa pb = xpSeq
+--                   (uncurry.f)
+--                   (xpLift def)
+--                   (\_ -> xpPair pa pb)  
+  
+-- xpLift2  :: PU a -> PU b -> PU (a, b)
+-- xpLift2  
+-- xpLift2 f pa pb
+--     = ( xpSeq fst pa (\ a ->
+--         xpSeq snd pb (\ b ->
+--         xpLift $ f a b))
+--       ) { theSchema = undefined }           
+           
+xpPitch :: PU Pitch
+xpPitch
+  =  xpLift2 (f9 Nothing) (xpElem "step" xpickle) (xpElem "octave" xpickle)
+--   = undefined -- liftM2 (f9 Nothing ) (xpElem "step" xpickle) (xpElem "octave" xpickle)
+--   = keepElem "octave" $ xpElem "octave" xpickle
+
+-- combine' = 
+    
 ----------------------------------------------------------------------------------------------------                      
 -- Helper functions
 ----------------------------------------------------------------------------------------------------

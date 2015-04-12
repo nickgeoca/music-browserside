@@ -50,4 +50,11 @@ type Music = [(Position, MusElm)]          -- TODO: The global modifiers/annotat
 
 data Note2  = Note2 {dur2::Duration, pitch2::Pitch, mods2::String}  deriving (Show)
 type Music2 = [(Position, Note2)]             
+data MXmlStep = C | D | E | F | G | A | B deriving (Show, Read, Enum)
+
+fromMXmlPitch step alter octave
+  = (12 * octave) + (fromEnum step) + alter'
+  where alter' = case alter of
+          Nothing -> 0
+          Just a  -> a
 
