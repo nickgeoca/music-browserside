@@ -66,7 +66,7 @@ xpNote2
 
       
 xpPitch :: PU Pitch
-xpPitch = xpLift2_3 (backward,forward) pstep poct palt
+xpPitch = xpWrap (forward,backward) (xpTriple pstep poct palt)           
   where pstep = (xpElem "step"   xpickle)           :: PU MXmlStep
         poct  = (xpElem "octave" xpickle)           :: PU MXmlOctave
         palt  = (xpOption $ xpElem "alter" xpickle) :: PU (Maybe MXmlAlter)
@@ -81,15 +81,6 @@ keepElems ls = let msum' = foldr (<+>) zeroArrow  -- (hasName "a") <+> (hasName 
 keepElem :: String -> PU a -> PU a
 keepElem x = xpFilterCont (hasName x)
 
-
--- This 
-xpLift2_2 :: (a -> (b,c), (b,c) -> a) -> PU b -> PU c -> PU a
-xpLift2_2 (back, for) pb pc
-  = xpSeq back (xpPair pb pc)      (\bc  -> xpLift $ for bc)
-
-xpLift2_3 :: (a -> (b,c,d), (b,c,d) -> a) -> PU b -> PU c -> PU d -> PU a
-xpLift2_3 (back, for) pb pc pd
-  = xpSeq back (xpTriple pb pc pd) (\bcd -> xpLift $ for bcd)
                       
 ----------------------------------------------------------------------------------------------------                      
 -- Example, figuring stuff out
