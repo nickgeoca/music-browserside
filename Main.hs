@@ -64,35 +64,12 @@ xpNote2
              (xpElem "pitch" xpPitch)
              def
 
-f9 a s o = fromMXmlPitch s a o
-
---               (b -> a) -> PU a -> (a -> PU b) -> PU b
--- xpLift2 :: (a -> b -> c) -> PU a -> PU b -> PU c            
-xpLift2 f pa pb = xpSeq
-                  (\_ -> def)                   -- BUG
-                  (xpPair pa pb)
-                  (\a -> xpLift $ uncurry.f a)  
-
--- xpLift2 f pa pb = xpSeq
---                   (uncurry.f)
---                   (xpLift def)
---                   (\_ -> xpPair pa pb)  
-  
--- xpLift2  :: PU a -> PU b -> PU (a, b)
--- xpLift2  
--- xpLift2 f pa pb
---     = ( xpSeq fst pa (\ a ->
---         xpSeq snd pb (\ b ->
---         xpLift $ f a b))
---       ) { theSchema = undefined }           
-           
+      
 xpPitch :: PU Pitch
-xpPitch
-  =  xpLift2 (f9 Nothing) (xpElem "step" xpickle) (xpElem "octave" xpickle)
---   = undefined -- liftM2 (f9 Nothing ) (xpElem "step" xpickle) (xpElem "octave" xpickle)
---   = keepElem "octave" $ xpElem "octave" xpickle
-
--- combine' = 
+xpPitch = xpLift2_3 (backward,forward) pstep poct palt
+  where pstep = (xpElem "step"   xpickle)           :: PU MXmlStep
+        poct  = (xpElem "octave" xpickle)           :: PU MXmlOctave
+        palt  = (xpOption $ xpElem "alter" xpickle) :: PU (Maybe MXmlAlter)
     
 ----------------------------------------------------------------------------------------------------                      
 -- Helper functions
@@ -104,6 +81,16 @@ keepElems ls = let msum' = foldr (<+>) zeroArrow  -- (hasName "a") <+> (hasName 
 keepElem :: String -> PU a -> PU a
 keepElem x = xpFilterCont (hasName x)
 
+
+-- This 
+xpLift2_2 :: (a -> (b,c), (b,c) -> a) -> PU b -> PU c -> PU a
+xpLift2_2 (back, for) pb pc
+  = xpSeq back (xpPair pb pc)      (\bc  -> xpLift $ for bc)
+
+xpLift2_3 :: (a -> (b,c,d), (b,c,d) -> a) -> PU b -> PU c -> PU d -> PU a
+xpLift2_3 (back, for) pb pc pd
+  = xpSeq back (xpTriple pb pc pd) (\bcd -> xpLift $ for bcd)
+                      
 ----------------------------------------------------------------------------------------------------                      
 -- Example, figuring stuff out
 ----------------------------------------------------------------------------------------------------

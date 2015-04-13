@@ -1,3 +1,6 @@
+{-# LANGUAGE TypeSynonymInstances #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE FlexibleInstances #-}
 module Music where
 import Data.Ratio
 
@@ -50,11 +53,34 @@ type Music = [(Position, MusElm)]          -- TODO: The global modifiers/annotat
 
 data Note2  = Note2 {dur2::Duration, pitch2::Pitch, mods2::String}  deriving (Show)
 type Music2 = [(Position, Note2)]             
-data MXmlStep = C | D | E | F | G | A | B deriving (Show, Read, Enum)
 
-fromMXmlPitch step alter octave
-  = (12 * octave) + (fromEnum step) + alter'
-  where alter' = case alter of
-          Nothing -> 0
-          Just a  -> a
+--------------------------------------------------
+data MXmlStep = C | CD_ | D | DE_ | E | F | FG_ | G | GA_ | A | AB_ | B
+              deriving (Show, Read, Enum)
+type MXmlOctave = Int
+type MXmlAlter = Int                  
+type MXmlPitch = (MXmlStep, MXmlOctave, Maybe MXmlAlter)
+                       
+class ConvertBothWay a b where
+  forward  :: b -> a
+  backward :: a -> b 
+    
+-- 58: (C,5,-2) = (B,4,-1) = (AB_,4,0) = (A,4,+1) = (GA_,4,+2)
+-- 54: (G,4,-1) = (FG_,4,0) = (F,4,1)
 
+-- DEPENDS on key, xml-accidental
+instance ConvertBothWay Pitch MXmlPitch where
+  forward (s, o, Just a)  = (12 * o) + (fromEnum s) + a
+  forward (s, o, Nothing) = forward (s,o,Just 0 :: Maybe Pitch)
+
+  backward pitch = (step, octave, alter)  -- NOTE: Must consider case of octave changing if going above/below C
+    where step   = toEnum $ (pitch `mod` 12) + (if altTrue then (-1) else 0)
+          octave = quot pitch 12
+          alter  = if altTrue then Just 1 else Nothing
+          altTrue= case (toEnum $ pitch `mod` 12) of
+                    CD_ -> True
+                    DE_ -> True
+                    FG_ -> True
+                    GA_ -> True
+                    AB_ -> True
+                    _   -> False
