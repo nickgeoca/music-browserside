@@ -61,6 +61,15 @@ type MXmlOctave = Int
 type MXmlAlter = Int                  
 type MXmlPitch = (MXmlStep, MXmlOctave, Maybe MXmlAlter)
                        
+-- TODO: Parsing
+--        * Note pitch annotating needs either:
+--          1) Note (absolute pitch, "accidental"); Modifier (key, clef)
+--             * For double accidentals (double-sharp, flat-flat)
+--          2) Note (absolute pitch); Modifier (key, clef)
+--             * Sufficient without oddball double accidental cases
+--          3) Note (absolute pitch); Modifier (key, clef, "accidental-prop")
+
+--------------------------------------------------                 
 class ConvertBothWay a b where
   forward  :: b -> a
   backward :: a -> b 
@@ -84,3 +93,4 @@ instance ConvertBothWay Pitch MXmlPitch where
                     GA_ -> True
                     AB_ -> True
                     _   -> False
+

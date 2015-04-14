@@ -3,6 +3,9 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
+{-# LANGUAGE MultiParamTypeClasses #-}
+
+
 import Text.XML.HXT.Core
 import Text.XML.HXT.HTTP
 import Data.Ratio
@@ -10,6 +13,7 @@ import Control.Monad.State.Lazy
 import Music               -- This is to import the Music type
 import Data.Default  
 
+  
 main = do
   d <- runX $ xunpickleDocument xpMusic            -- TODO: Return Music2 instead of [Music2]
     [withValidate no
@@ -18,7 +22,7 @@ main = do
     ,withPreserveComment no] "demo-score.xml"             
     -- >>> arrIO (\x -> do {print x; return x})
   let d2 = postProcessing (head d)                     
-  mapM (putStrLn.show) d2
+  mapM print d2
   return ()
   where postProcessing = fixPositions 
 
@@ -60,10 +64,11 @@ xpNote2
     keepElems ["pitch", "durationTest"] $          -- Ignore other elems
     xpWrap (uncurry3 Note2,                        -- 
             \t -> (dur2 t, pitch2 t, mods2 t)) $
-    xpTriple (xpElem "durationTest" xpickle)       -- 
-             (xpElem "pitch" xpPitch)
-             def
+    xpTriple def (xpElem "pitch" xpPitch) def
 
+-- xpDuration :: (Int,Int) -> PU Duration
+-- xpDuration
+--   (divs,beat) = 
       
 xpPitch :: PU Pitch
 xpPitch = xpWrap (forward,backward) (xpTriple pstep poct palt)           
@@ -111,3 +116,51 @@ xpTitle
 --                                   Maybe z -> runMaybeT $ f z)
 
 -- M a -> (a -> M b) -> M b   
+
+----------------------------------------------------------------------------------------------------
+-- Made up time parsing. Wanted to use state monad again.
+data TymeElmX= XTHour Int    | XTMeri Int     deriving (Show, Read)
+data TymeElm = THour Int Int | TMeri Int      deriving (Show, Read)              
+type TymeXml = [TymeElmX]
+type Tyme    = [TymeElm]
+
+xpTopLvlTyme = xpElem "time" $ xpTyme 
+
+xpTyme :: PU Tyme
+xpTyme = xpWrap (forward,backward)  $
+         xpList $
+         xpTymeX
+
+xpTymeX :: PU TymeElmX
+xpTymeX
+  = xpAlt tag ps
+    where tag (XTHour _) = 0
+          tag (XTMeri _) = 1
+          ps = [ xpWrap (XTMeri,
+                         \ (XTMeri i) -> i
+                        ) $
+                 xpElem "meridiem" xpickle
+               , xpWrap (XTHour,
+                         \ (XTHour h) -> h
+                        ) $
+                 xpElem "hour" xpickle
+               ]
+
+main2 = do
+  d <- runX $ xunpickleDocument xpTopLvlTyme
+       [withValidate no
+       ,withRemoveWS yes
+       ,withPreserveComment no] "test.xml"
+  mapM print $ head d
+  return ()
+
+instance ConvertBothWay Tyme TymeXml where
+  forward x = evalState (mapM f x) 0
+    where f (XTHour h) = do
+            m <- get
+            return (THour (h+m) m)
+          f (XTMeri m) = do
+            put m
+            return (TMeri m)
+
+  backward _ = []    
