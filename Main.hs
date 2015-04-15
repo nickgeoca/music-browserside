@@ -15,7 +15,7 @@ import Data.Default
 
   
 main = do
-  d <- runX $ xunpickleDocument xpMusic            -- TODO: Return Music2 instead of [Music2]
+  d <- runX $ xunpickleDocument xpMusic33            -- TODO: Return Music2 instead of [Music2]
     [withValidate no
 --    ,withTrace 2
     ,withRemoveWS yes
@@ -24,7 +24,7 @@ main = do
   let d2 = postProcessing (head d)                     
   mapM print d2
   return ()
-  where postProcessing = fixPositions 
+  where postProcessing = id -- fixPositions 
 
 ----------------------------------------------------------------------------------------------------                      
 -- Post Processing
@@ -43,10 +43,20 @@ fixPositions m = evalState (mapM f m) (0%1)
 instance XmlPickler Music2   where  xpickle = xpMusic
 instance XmlPickler Note2    where  xpickle = xpNote2
 instance XmlPickler Position where  xpickle = xpPrim :: PU (Ratio Int)
-instance XmlPickler MXmlStep where  xpickle = xpPrim
+-- instance XmlPickler MXStep where  xpickle = xpPrim
 
 instance (Default a, Eq a) => Default (PU a) where
   def = xpLift (def::a)
+
+-- xpMusic :: PU Music
+xpMusic33
+  = startPt $
+    xpList $
+    (xpickle :: PU MXMeasElm)
+  where startPt a = xpElem "score-partwise" $                -- Select
+                    keepElem "part"    $ xpElem "part"    $  -- Fitler, select
+                    keepElem "measure" $ xpElem "measure" $  -- Filter, select
+                    a
 
 xpMusic :: PU Music2
 xpMusic
@@ -72,9 +82,9 @@ xpNote2
       
 xpPitch :: PU Pitch
 xpPitch = xpWrap (forward,backward) (xpTriple pstep poct palt)           
-  where pstep = (xpElem "step"   xpickle)           :: PU MXmlStep
-        poct  = (xpElem "octave" xpickle)           :: PU MXmlOctave
-        palt  = (xpOption $ xpElem "alter" xpickle) :: PU (Maybe MXmlAlter)
+  where pstep = (xpElem "step"   xpickle)           :: PU MXStep
+        poct  = (xpElem "octave" xpickle)           :: PU MXOctave
+        palt  = (xpOption $ xpElem "alter" xpickle) :: PU (Maybe MXAlter)
     
 ----------------------------------------------------------------------------------------------------                      
 -- Helper functions
@@ -86,36 +96,54 @@ keepElems ls = let msum' = foldr (<+>) zeroArrow  -- (hasName "a") <+> (hasName 
 keepElem :: String -> PU a -> PU a
 keepElem x = xpFilterCont (hasName x)
 
+----------------------------------------------------------------------------------------------------                      
+-- MusicXml Pickler functions
+----------------------------------------------------------------------------------------------------
+instance XmlPickler MXMeasure where
+  xpickle = xpList $ xpickle
+
+instance XmlPickler MXMeasElm where
+  xpickle = xpAlt tag ps
+    where tag (MXAttrElm _) = 0
+          tag (MXNoteElm _) = 1
+          ps = [ (xp4Tuple xpickle xpickle xpickle xpickle) :: MXAttr PU
+               , (xp4Tuple xpickle xpickle xpickle xpickle) :: MXNote PU
+               ]
+
+-- Selects one XML Node and pickles with xpPrim
+selNodeAndPickle s = xpElem s xpPrim
+
+---- Measure Attributes
+-- Divisions
+instance XmlPickler MXDivisions where xpickle = selNodeAndPickle "divisions"  
+-- Key
+instance XmlPickler MXKey       where xpickle = xpElem "key" (xpPair xpickle xpickle)
+instance XmlPickler MXFifths    where xpickle = selNodeAndPickle "fifths" 
+instance XmlPickler MXMode      where xpickle = selNodeAndPickle "mode"
+-- Time
+instance XmlPickler MXTime      where xpickle = xpElem "time" (xpPair xpickle xpickle)
+instance XmlPickler MXBeats     where xpickle = selNodeAndPickle "beats"
+instance XmlPickler MXBeatType  where xpickle = selNodeAndPickle "beat-type"
+-- Clef
+instance XmlPickler MXClef      where xpickle = xpElem "clef" (xpPair xpickle xpickle)
+instance XmlPickler MXClefSign  where xpickle = selNodeAndPickle "sign"
+instance XmlPickler MXClefLine  where xpickle = selNodeAndPickle "line"
+---- Notes
+-- Pitch                                      
+instance XmlPickler MXPitch     where xpickle = xpElem "pitch" (xpTriple xpickle xpickle xpickle)
+instance XmlPickler MXStep      where xpickle = selNodeAndPickle "step"
+instance XmlPickler MXOctave    where xpickle = selNodeAndPickle "octave"
+instance XmlPickler (Maybe MXAlter)   where xpickle = xpOption $ selNodeAndPickle "alter"
+-- Duration
+instance XmlPickler MXDuration  where xpickle = selNodeAndPickle "duration"
+-- Voice
+instance XmlPickler MXVoice     where xpickle = selNodeAndPickle "voice"
+-- Type
+instance XmlPickler MXNoteType  where xpickle = selNodeAndPickle "type"
                       
 ----------------------------------------------------------------------------------------------------                      
 -- Example, figuring stuff out
 ----------------------------------------------------------------------------------------------------
-type Title = String
-  
-instance XmlPickler Title where
-  xpickle = xpTitle
-
--- xpTitle :: PU Title
-xpTitle
-  = xpElem "score-partwise" $
-    xpFilterCont (hasName "movement-title") $
-    xpElem "movement-title" xpText
-
-{-
-  = xpElem "score-partwise" $ xpFilterCont (hasName "abc123") $ xpAttr "title" xpText    
-<score-partwise title="Pitches and accidentals">
-  <identification>
-    <miscellaneous>
--}
-    
--- newtype MaybeT m a = MaybeT { runMaybeT :: m (Maybe a) }
--- instance Monad m => Monad (MaybeT m) where
---   return = MaybeT . return . Just
---   x >>= f = MaybeT $ do y <- runMaybeT x
---                         Case y of Nothing -> return Nothing
---                                   Maybe z -> runMaybeT $ f z)
-
--- M a -> (a -> M b) -> M b   
 
 ----------------------------------------------------------------------------------------------------
 -- Made up time parsing. Wanted to use state monad again.
@@ -134,8 +162,8 @@ xpTyme = xpWrap (forward,backward)  $
 xpTymeX :: PU TymeElmX
 xpTymeX
   = xpAlt tag ps
-    where tag (XTHour _) = 0
-          tag (XTMeri _) = 1
+    where tag (XTMeri _) = 0
+          tag (XTHour _) = 1
           ps = [ xpWrap (XTMeri,
                          \ (XTMeri i) -> i
                         ) $
