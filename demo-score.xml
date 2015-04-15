@@ -27,7 +27,7 @@
           <fifths>0</fifths>
           <mode>major</mode>
         </key>
-        <time symbol="common">
+        <time> <!-- symbol="common"> -->
           <beats>4</beats>
           <beat-type>4</beat-type>
         </time>
