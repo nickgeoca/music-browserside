@@ -15,7 +15,7 @@ import Data.Default
 
   
 main = do
-  d <- runX $ xunpickleDocument xpMusic33            -- TODO: Return Music2 instead of [Music2]
+  d <- runX $ xunpickleDocument xpMusic            -- TODO: Return Music2 instead of [Music2]
     [withValidate no
     -- ,withTrace 2
     ,withRemoveWS yes
@@ -71,10 +71,11 @@ xpNote2
 --   (divs,beat) = 
       
 xpPitch :: PU Pitch
-xpPitch = xpWrap (forward,backward) (xpTriple pstep poct palt)           
-  where pstep = (xpElem "step"   xpPrim)           :: PU MXStep
-        poct  = (xpElem "octave" xpickle)           :: PU MXOctave
-        palt  = (xpOption $ xpElem "alter" xpickle) :: PU (Maybe MXAlter)
+xpPitch = undefined
+-- xpPitch = xpWrap (forward,backward) (xpTriple pstep poct palt)           
+--   where pstep = (xpElem "step"   xpPrim)           :: PU MXStep
+--         poct  = (xpElem "octave" xpickle)           :: PU Int
+--         palt  = (xpOption $ xpElem "alter" xpickle) :: PU (Maybe Int)
     
 ----------------------------------------------------------------------------------------------------                      
 -- Helper functions
@@ -89,8 +90,8 @@ keepElem x = xpFilterCont (hasName x)
 ----------------------------------------------------------------------------------------------------                      
 -- MusicXml Pickler functions
 ----------------------------------------------------------------------------------------------------
-xpMusic33 :: PU MXMeasure
-xpMusic33
+mxMeasure :: PU MXMeasure
+mxMeasure
   = startPt $
     xpWrap (concat,undefined) $ xpList $ xpElem "measure" $
     xpList $ xpickle 
@@ -106,50 +107,57 @@ instance XmlPickler MXMeasElm where
                , xpWrap (MXNoteElm, \(MXNoteElm n) -> n) pNote
                ]
 
-
--- instance Default MXAttr where
---   def = (0,(0,MXMajor),(0,0),('G',0))
-
+  
 -- Selects one XML Node and pickles with xpPrim
 selNodeAndPickle s = xpElem s xpPrim
                      
 ---- Measure Attributes
-pAttr     = xpElem "attributes" $ xp4Tuple
+pAttr     = xpElem "attributes" $ wAttr
             pdivs -- Divisions
             pkey  -- Key
             ptime -- Time
             pclef -- Clef
-    where pdivs  = selNodeAndPickle "divisions"         :: PU MXDivisions
-          
-          pkey   = xpElem "key" (xpPair pfif pmode)     :: PU MXKey        
-          pfif   = selNodeAndPickle "fifths"            :: PU MXFifths     
-          pmode  = selNodeAndPickle "mode"              :: PU MXMode       
-          
-          ptime  = xpElem "time" (xpPair pbeats pbtyp)  :: PU MXTime       
-          pbeats = selNodeAndPickle "beats"             :: PU MXBeats
-          pbtyp  = selNodeAndPickle "beat-type"         :: PU MXBeatType   
+    where pdivs  = selNodeAndPickle "divisions"         -- Divisions per beat
 
-          pclef  = xpElem "clef" (xpPair pcsign pcline) :: PU MXClef       
-          pcsign = selNodeAndPickle "sign"              :: PU MXClefSign   
-          pcline = selNodeAndPickle "line"              :: PU MXClefLine   
+          pkey   = xpElem "key" (wKey pfif pmode)       :: PU MXKey
+          pfif   = selNodeAndPickle "fifths"            -- Key Fifths     
+          pmode  = selNodeAndPickle "mode"              -- Key Mode       
+
+          ptime  = xpElem "time" (wTime pbeats pbtyp)    :: PU MXTime       
+          pbeats = selNodeAndPickle "beats"             -- Time Beats per measure
+          pbtyp  = selNodeAndPickle "beat-type"         -- Time Beat Division
+
+          pclef  = xpElem "clef" (wClef pcsign pcline)   :: PU MXClef       
+          pcsign = selNodeAndPickle "sign"              -- Clef Sign   
+          pcline = selNodeAndPickle "line"              -- Clef Line   
+
+          -- Wrap functions. Converts tuple to type and vice versa
+          wAttr a b c d = xpWrap (uncurry4 MXAttr, \(MXAttr divs key time clef) -> (divs,key,time,clef)) $ xp4Tuple a b c d
+          wKey a b = xpWrap (uncurry MXKey, \ (MXKey fifths mode) -> (fifths, mode)) $ xpPair a b
+          wTime a b = xpWrap (uncurry MXTime, \(MXTime beats beatType) -> (beats, beatType)) $ xpPair a b
+          wClef a b = xpWrap (uncurry MXClef, \(MXClef sign line) -> (sign, line)) $ xpPair a b
 
 ---- Measure Notes
-pNote     = xpElem "note" $ xp4Tuple
+pNote     = xpElem "note" $ wNote
             ppitch -- Pitch
             pdur   -- Duration
             pvoice -- Voice
             ptype  -- Type
-    where ppitch = xpElem "pitch" (xpTriple pstep poct palter) :: PU MXPitch      
-          pstep  = selNodeAndPickle "step"                     :: PU MXStep       
-          poct   = selNodeAndPickle "octave"                   :: PU MXOctave     
-          palter = xpOption $ selNodeAndPickle "alter"         :: PU (Maybe MXAlter)    
+    where ppitch = xpElem "pitch" (wPitch pstep poct palter)   :: PU MXPitch      
+          pstep  = selNodeAndPickle "step"                     -- Pitch Step       
+          poct   = selNodeAndPickle "octave"                   -- Pitch Octave     
+          palter = xpOption $ selNodeAndPickle "alter"         -- Ptich Maybe Alter    
 
-          pdur   = selNodeAndPickle "duration"                 :: PU MXDuration   
+          pdur   = selNodeAndPickle "duration"                 -- Duration
             
-          pvoice = selNodeAndPickle "voice"                    :: PU MXVoice      
+          pvoice = selNodeAndPickle "voice"                    -- Voice
 
-          ptype  = selNodeAndPickle "type"                     :: PU MXNoteType   
-                      
+          ptype  = selNodeAndPickle "type"                     -- Note Type (eg quarter)    
+          
+          -- Wrap functions
+          wNote a b c d = xpWrap (uncurry4 MXNote, \(MXNote pitch dur voice notetype) -> (pitch,dur,voice,notetype)) $ xp4Tuple a b c d  
+          wPitch a b c = xpWrap (uncurry3 MXPitch, \(MXPitch step oct alt) -> (step, oct, alt)) $ xpTriple a b c
+
 ----------------------------------------------------------------------------------------------------                      
 -- Example, figuring stuff out
 ----------------------------------------------------------------------------------------------------

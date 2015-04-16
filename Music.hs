@@ -3,9 +3,10 @@
 {-# LANGUAGE FlexibleInstances #-}
 module Music where
 import Data.Ratio
+import Control.Monad.State.Lazy
 
 ----------------------------------------------------------------------------------------------------                      
--- Music Types
+-- Music Type
 ----------------------------------------------------------------------------------------------------
 -- Notes/Rest Modifiers/Annotations
 -- Modifies notes through time. Might be useful for parallel notes, such as Arpeggio
@@ -54,12 +55,130 @@ type Music = [(Position, MusElm)]          -- TODO: The global modifiers/annotat
 data Note2  = Note2 {dur2::Duration, pitch2::Pitch, mods2::String}  deriving (Show)
 type Music2 = [(Position, Note2)]             
 
+----------------------------------------------------------------------------------------------------                      
+-- MusicXML Type
 ----------------------------------------------------------------------------------------------------
 data MXStep = C | CD_ | D | DE_ | E | F | FG_ | G | GA_ | A | AB_ | B
               deriving (Show, Read, Enum)
-type MXOctave   = Int
-type MXAlter    = Int                  
 
+data MXClefSign = Gclef | Fclef
+data MXMode = MXMinor | MXMajor deriving (Eq)
+-------------------------
+data MXClef = MXClef {
+  mxclefsign :: MXClefSign,  -- Clef sign
+  mxclefline :: Int          -- Clef line
+  } deriving (Show, Read)
+
+data MXTime = MXTime {
+  mxbeats    :: Int,
+  mxbeattype :: Int
+  } deriving (Show, Read)
+
+data MXKey = MXKey {
+  mxfifths :: Int,
+  mxmode   :: MXMode
+  } deriving (Show, Read)
+
+-----------
+data MXPitch = MXPitch {
+  mxstep    :: MXStep,     -- Step (C,D,F,etc)
+  mxoctave  :: Int,        -- Ocatve
+  mxalter   :: Maybe Int   -- Pitch alter
+  } deriving (Show, Read)
+
+data MXNoteType = Hn | Qn | En | Sn | Tn | S64n | On deriving (Enum)                  
+
+-------------------------
+data MXAttr = MXAttr {
+  mxdivs :: Int,
+  mxkey  :: MXKey,
+  mxtime :: MXTime,
+  mxclef :: MXClef  
+  } deriving (Show, Read)
+
+data MXNote = MXNote {
+  mxpitch    :: MXPitch,
+  mxduration :: Int,
+  mxvoice    :: Int,
+  mxnotetype :: MXNoteType
+  } deriving (Show, Read)
+
+-------------------------
+
+data MXMeasElm = MXNoteElm MXNote | MXAttrElm MXAttr deriving (Show, Read)
+type MXMeasure = [MXMeasElm]
+                 
+-- TODO: Parsing
+--        * Note pitch annotating needs either:
+--          1) Note (absolute pitch, "accidental"); Modifier (key, clef)
+--             * For double accidentals (double-sharp, flat-flat)
+--          2) Note (absolute pitch); Modifier (key, clef)
+--             * Sufficient without oddball double accidental cases
+--          3) Note (absolute pitch); Modifier (key, clef, "accidental-prop")
+
+--------------------------------------------------                 
+class ConvertBothWay a b where
+  forward  :: b -> a
+  backward :: a -> b 
+    
+data MusMXMeasState = MusMXMeasState {
+  sDivs::Int,
+  sBeats::Int,
+  sBeatType::Int,
+  sPosition::Duration
+  }
+
+instance ConvertBothWay Music MXMeasure where
+  forward mxMeas = evalState (mapM f mxMeas) $ MusMXMeasState 0 0 0 (0%1)
+    where f :: MXMeasElm -> State MusMXMeasState (Position, MusElm)
+          f (MXNoteElm n) = do
+            state <- get
+            let divisionDur = mxduration n
+                beatType    = sBeatType state
+                divisions   = sDivs state
+                noteDuration= divisionDur % (beatType * divisions)
+                oldPosition = sPosition state
+                newPosition = oldPosition + noteDuration
+                ptch        = forward $ mxpitch n
+                note        = Note noteDuration ptch []
+            put $ state {sPosition = newPosition}
+            return (oldPosition, NoteElm note)
+          f (MXAttrElm a) = do
+            state <- get
+            let pos      = sPosition state
+                divs     = mxdivs a
+                beats    = mxbeats    $ mxtime a
+                beattype = mxbeattype $ mxtime a
+            put $ state {sDivs = divs, sBeats = beats, sBeatType = beattype}
+            return (pos, undefined a) -- BUG!!!
+  backward = undefined
+
+-- instance ConvertBothWay MusElm MXAttr where
+--  forward = 
+         
+-- 58: (C,5,-2) = (B,4,-1) = (AB_,4,0) = (A,4,+1) = (GA_,4,+2)
+-- 54: (G,4,-1) = (FG_,4,0) = (F,4,1)
+
+-- DEPENDS on key, xml-accidental
+instance ConvertBothWay Pitch MXPitch where
+  forward (MXPitch s o (Just a))  = (12 * o) + (fromEnum s) + a
+  forward (MXPitch s o Nothing) = forward $ MXPitch s o (Just 0)
+
+  backward pitch = MXPitch step octave alter  -- NOTE: Must consider case of octave changing if going above/below C
+    where step   = toEnum $ (pitch `mod` 12) + (if altTrue then (-1) else 0)
+          octave = quot pitch 12
+          alter  = if altTrue then Just 1 else Nothing
+          altTrue= case (toEnum $ pitch `mod` 12) of
+                    CD_ -> True
+                    DE_ -> True
+                    FG_ -> True
+                    GA_ -> True
+                    AB_ -> True
+                    _   -> False
+
+
+----------------------------------------------------------------------------------------------------
+-- Read/Show Instances
 instance Show MXNoteType where
   show a = case a of
     Hn -> "half"
@@ -95,62 +214,4 @@ instance Show MXClefSign where
 
 instance Read MXClefSign where
   readsPrec _ "G" = [(Gclef, "")]
-  readsPrec _ "F" = [(Fclef, "")]
-
-data MXClefSign = Gclef | Fclef
-type MXClefLine = Int
-type MXBeats = Int
-type MXBeatType = Int               
-data MXMode = MXMinor | MXMajor deriving (Eq)
-type MXFifths = Int                   
--------------------------
-type MXClef = (MXClefSign, MXClefLine)
-type MXTime = (MXBeats, MXBeatType)
-type MXKey = (MXFifths, MXMode)                      
-type MXDivisions = Int
-type MXAttr = (MXDivisions, MXKey, MXTime, MXClef)
-
-type MXPitch    = (MXStep, MXOctave, Maybe MXAlter)
-type MXDuration = Int
-type MXVoice    = Int
-data MXNoteType = Hn | Qn | En | Sn | Tn | S64n | On deriving (Enum)                  
-type MXNote    = (MXPitch, MXDuration, MXVoice, MXNoteType)
--------------------------
-data MXMeasElm = MXNoteElm MXNote | MXAttrElm MXAttr deriving (Show)
-type MXMeasure = [MXMeasElm]
-                 
-
-
--- TODO: Parsing
---        * Note pitch annotating needs either:
---          1) Note (absolute pitch, "accidental"); Modifier (key, clef)
---             * For double accidentals (double-sharp, flat-flat)
---          2) Note (absolute pitch); Modifier (key, clef)
---             * Sufficient without oddball double accidental cases
---          3) Note (absolute pitch); Modifier (key, clef, "accidental-prop")
-
---------------------------------------------------                 
-class ConvertBothWay a b where
-  forward  :: b -> a
-  backward :: a -> b 
-    
--- 58: (C,5,-2) = (B,4,-1) = (AB_,4,0) = (A,4,+1) = (GA_,4,+2)
--- 54: (G,4,-1) = (FG_,4,0) = (F,4,1)
-
--- DEPENDS on key, xml-accidental
-instance ConvertBothWay Pitch MXPitch where
-  forward (s, o, Just a)  = (12 * o) + (fromEnum s) + a
-  forward (s, o, Nothing) = forward (s,o,Just 0 :: Maybe Pitch)
-
-  backward pitch = (step, octave, alter)  -- NOTE: Must consider case of octave changing if going above/below C
-    where step   = toEnum $ (pitch `mod` 12) + (if altTrue then (-1) else 0)
-          octave = quot pitch 12
-          alter  = if altTrue then Just 1 else Nothing
-          altTrue= case (toEnum $ pitch `mod` 12) of
-                    CD_ -> True
-                    DE_ -> True
-                    FG_ -> True
-                    GA_ -> True
-                    AB_ -> True
-                    _   -> False
-
+  readsPrec _ "F" = [(Fclef, "")]  
