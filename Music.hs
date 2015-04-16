@@ -71,28 +71,37 @@ instance Show MXNoteType where
     On -> "128th"
 instance Read MXNoteType where
   readsPrec _ a = case a of
-    "half"    -> [(Hn, "half")]
-    "quarter" -> [(Qn, "half")]
-    "eight"   -> [(En, "half")]
-    "16th"    -> [(Sn, "half")]
-    "32nd"    -> [(Tn, "half")]
-    "64th"    -> [(S64n, "half")]
-    "128th"   -> [(On, "half")]
---     _         -> NilN
---   readsPrec _ _ = NilN
+    "half"    -> [(Hn, "")]
+    "quarter" -> [(Qn, "")]
+    "eight"   -> [(En, "")]
+    "16th"    -> [(Sn, "")]
+    "32nd"    -> [(Tn, "")]
+    "64th"    -> [(S64n, "")]
+    "128th"   -> [(On, "")]
+    _         -> []
 
 instance Show MXMode where
   show MXMajor = "major"
   show MXMinor = "minor"
+
 instance Read MXMode where
-  readsPrec _ "major" = [(MXMajor, "major")]
-  readsPrec _ "minor" = [(MXMinor, "minor")]
-  
-type MXClefSign = Char
+  readsPrec _ "major" = [(MXMajor, "")]
+  readsPrec _ "minor" = [(MXMinor, "")]
+  readsPrec _ _       = []
+
+instance Show MXClefSign where
+  show Gclef = "G"
+  show Fclef = "F"
+
+instance Read MXClefSign where
+  readsPrec _ "G" = [(Gclef, "")]
+  readsPrec _ "F" = [(Fclef, "")]
+
+data MXClefSign = Gclef | Fclef
 type MXClefLine = Int
 type MXBeats = Int
 type MXBeatType = Int               
-data MXMode = MXMinor | MXMajor
+data MXMode = MXMinor | MXMajor deriving (Eq)
 type MXFifths = Int                   
 -------------------------
 type MXClef = (MXClefSign, MXClefLine)
@@ -107,7 +116,7 @@ type MXVoice    = Int
 data MXNoteType = Hn | Qn | En | Sn | Tn | S64n | On deriving (Enum)                  
 type MXNote    = (MXPitch, MXDuration, MXVoice, MXNoteType)
 -------------------------
-data MXMeasElm = MXNoteElm MXNote | MXAttrElm MXAttr
+data MXMeasElm = MXNoteElm MXNote | MXAttrElm MXAttr deriving (Show)
 type MXMeasure = [MXMeasElm]
                  
 

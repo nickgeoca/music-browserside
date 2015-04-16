@@ -73,8 +73,8 @@
         <type>quarter</type>
       </note>
     </measure> 
-    <!--=======================================================--><!--
-    <measure number="2">
+    <!--=======================================================-->
+    <measure> <!-- number="2"> -->
       <note>
         <pitch>
           <step>C</step>
@@ -111,7 +111,7 @@
         <voice>1</voice>
         <type>quarter</type>
       </note>
-    </measure> -->
+    </measure>
   <!--=========================================================-->
   </part> 
 </score-partwise>

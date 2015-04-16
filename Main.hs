@@ -17,7 +17,7 @@ import Data.Default
 main = do
   d <- runX $ xunpickleDocument xpMusic33            -- TODO: Return Music2 instead of [Music2]
     [withValidate no
---    ,withTrace 2
+    -- ,withTrace 2
     ,withRemoveWS yes
     ,withPreserveComment no] "demo-score.xml"             
     -- >>> arrIO (\x -> do {print x; return x})
@@ -48,16 +48,6 @@ instance XmlPickler Position where  xpickle = xpPrim :: PU (Ratio Int)
 instance (Default a, Eq a) => Default (PU a) where
   def = xpLift (def::a)
 
--- xpMusic :: PU Music
-xpMusic33
-  = startPt $
-    xpList $
-    (xpickle :: PU MXMeasElm)
-  where startPt a = xpElem "score-partwise" $                -- Select
-                    keepElem "part"    $ xpElem "part"    $  -- Fitler, select
-                    keepElem "measure" $ xpElem "measure" $  -- Filter, select
-                    a
-
 xpMusic :: PU Music2
 xpMusic
   = startPt $
@@ -82,7 +72,7 @@ xpNote2
       
 xpPitch :: PU Pitch
 xpPitch = xpWrap (forward,backward) (xpTriple pstep poct palt)           
-  where pstep = (xpElem "step"   xpickle)           :: PU MXStep
+  where pstep = (xpElem "step"   xpPrim)           :: PU MXStep
         poct  = (xpElem "octave" xpickle)           :: PU MXOctave
         palt  = (xpOption $ xpElem "alter" xpickle) :: PU (Maybe MXAlter)
     
@@ -99,47 +89,66 @@ keepElem x = xpFilterCont (hasName x)
 ----------------------------------------------------------------------------------------------------                      
 -- MusicXml Pickler functions
 ----------------------------------------------------------------------------------------------------
-instance XmlPickler MXMeasure where
-  xpickle = xpList $ xpickle
+xpMusic33 :: PU MXMeasure
+xpMusic33
+  = startPt $
+    xpWrap (concat,undefined) $ xpList $ xpElem "measure" $
+    xpList $ xpickle 
+  where startPt a = xpElem "score-partwise" $                -- Select
+                    keepElem "part"    $ xpElem "part"    $  -- Fitler, select
+                    keepElem "measure" $ a                    -- Filter
 
 instance XmlPickler MXMeasElm where
   xpickle = xpAlt tag ps
     where tag (MXAttrElm _) = 0
           tag (MXNoteElm _) = 1
-          ps = [ (xp4Tuple xpickle xpickle xpickle xpickle) :: MXAttr PU
-               , (xp4Tuple xpickle xpickle xpickle xpickle) :: MXNote PU
+          ps = [ xpWrap (MXAttrElm, \(MXAttrElm a) -> a) pAttr
+               , xpWrap (MXNoteElm, \(MXNoteElm n) -> n) pNote
                ]
+
+
+-- instance Default MXAttr where
+--   def = (0,(0,MXMajor),(0,0),('G',0))
 
 -- Selects one XML Node and pickles with xpPrim
 selNodeAndPickle s = xpElem s xpPrim
-
+                     
 ---- Measure Attributes
--- Divisions
-instance XmlPickler MXDivisions where xpickle = selNodeAndPickle "divisions"  
--- Key
-instance XmlPickler MXKey       where xpickle = xpElem "key" (xpPair xpickle xpickle)
-instance XmlPickler MXFifths    where xpickle = selNodeAndPickle "fifths" 
-instance XmlPickler MXMode      where xpickle = selNodeAndPickle "mode"
--- Time
-instance XmlPickler MXTime      where xpickle = xpElem "time" (xpPair xpickle xpickle)
-instance XmlPickler MXBeats     where xpickle = selNodeAndPickle "beats"
-instance XmlPickler MXBeatType  where xpickle = selNodeAndPickle "beat-type"
--- Clef
-instance XmlPickler MXClef      where xpickle = xpElem "clef" (xpPair xpickle xpickle)
-instance XmlPickler MXClefSign  where xpickle = selNodeAndPickle "sign"
-instance XmlPickler MXClefLine  where xpickle = selNodeAndPickle "line"
----- Notes
--- Pitch                                      
-instance XmlPickler MXPitch     where xpickle = xpElem "pitch" (xpTriple xpickle xpickle xpickle)
-instance XmlPickler MXStep      where xpickle = selNodeAndPickle "step"
-instance XmlPickler MXOctave    where xpickle = selNodeAndPickle "octave"
-instance XmlPickler (Maybe MXAlter)   where xpickle = xpOption $ selNodeAndPickle "alter"
--- Duration
-instance XmlPickler MXDuration  where xpickle = selNodeAndPickle "duration"
--- Voice
-instance XmlPickler MXVoice     where xpickle = selNodeAndPickle "voice"
--- Type
-instance XmlPickler MXNoteType  where xpickle = selNodeAndPickle "type"
+pAttr     = xpElem "attributes" $ xp4Tuple
+            pdivs -- Divisions
+            pkey  -- Key
+            ptime -- Time
+            pclef -- Clef
+    where pdivs  = selNodeAndPickle "divisions"         :: PU MXDivisions
+          
+          pkey   = xpElem "key" (xpPair pfif pmode)     :: PU MXKey        
+          pfif   = selNodeAndPickle "fifths"            :: PU MXFifths     
+          pmode  = selNodeAndPickle "mode"              :: PU MXMode       
+          
+          ptime  = xpElem "time" (xpPair pbeats pbtyp)  :: PU MXTime       
+          pbeats = selNodeAndPickle "beats"             :: PU MXBeats
+          pbtyp  = selNodeAndPickle "beat-type"         :: PU MXBeatType   
+
+          pclef  = xpElem "clef" (xpPair pcsign pcline) :: PU MXClef       
+          pcsign = selNodeAndPickle "sign"              :: PU MXClefSign   
+          pcline = selNodeAndPickle "line"              :: PU MXClefLine   
+
+---- Measure Notes
+pNote     = xpElem "note" $ xp4Tuple
+            ppitch -- Pitch
+            pdur   -- Duration
+            pvoice -- Voice
+            ptype  -- Type
+    where ppitch = xpElem "pitch" (xpTriple pstep poct palter) :: PU MXPitch      
+          pstep  = selNodeAndPickle "step"                     :: PU MXStep       
+          poct   = selNodeAndPickle "octave"                   :: PU MXOctave     
+          palter = xpOption $ selNodeAndPickle "alter"         :: PU (Maybe MXAlter)    
+
+          pdur   = selNodeAndPickle "duration"                 :: PU MXDuration   
+            
+          pvoice = selNodeAndPickle "voice"                    :: PU MXVoice      
+
+          ptype  = selNodeAndPickle "type"                     :: PU MXNoteType   
                       
 ----------------------------------------------------------------------------------------------------                      
 -- Example, figuring stuff out
