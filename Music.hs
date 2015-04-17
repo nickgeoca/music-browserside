@@ -31,10 +31,19 @@ data NoteRestMod   = ModAcc Accents | ModDyn Dynamic | ModRel NoteRelat deriving
 -- Notes/Rest                                                      
 -- Types: Layer 1
 type Duration   = Ratio Int
-type Pitch      = Int            -- Absolute: C0=~16.35Hz,0; C1,12; C2,24
+type Pitch      = Int            -- Absolute: 0-C0; 12-C1; 24-C2
+
 -- Types: Layer 2
-data Rest  = Rest { restdur::Duration, restmods :: [NoteRestMod] } deriving (Show)
-data Note  = Note {dur::Duration, pitch::Pitch, mods::[NoteRestMod]}  deriving (Show)
+data Rest  = Rest {
+  restdur::Duration,
+  restmods :: [NoteRestMod]
+  } deriving (Show)
+
+data Note  = Note {
+  dur::Duration,
+  pitch::Pitch,
+  mods::[NoteRestMod]
+  } deriving (Show)
 
 --------------------------------------------------
 -- Global Modifiers/Annotations
