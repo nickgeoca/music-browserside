@@ -18,14 +18,14 @@ type NoteTie a = (KeyH,  -- Not key in music sense. Key when matching up to othe
                          -- value is read before the initial value. e.g. notes are in parallel
                   a)     -- Can be any type
 -- Types: Layer 1
-data DynamicType   = Crescendo | Diminuendo
-data NoteRelatType = Slur | Arpeggio                              
+data DynamicType   = Crescendo | Diminuendo deriving (Show)
+data NoteRelatType = Slur | Arpeggio                       deriving (Show)       
 -- Types: Layer 2
-data Accents       = Staccato | Tenuto        -- Staccato, Tenuto, etc
+data Accents       = Staccato | Tenuto deriving (Show)       -- Staccato, Tenuto, etc
 type Dynamic       = NoteTie DynamicType      -- Crescendo, Diminuendo, etc
 type NoteRelat     = NoteTie NoteRelatType    -- Slur, Arpeggio, etc
 -- Types: Layer 3
-data NoteRestMod   = ModAcc Accents | ModDyn Dynamic | ModRel NoteRelat
+data NoteRestMod   = ModAcc Accents | ModDyn Dynamic | ModRel NoteRelat deriving (Show)
 
 --------------------------------------------------
 -- Notes/Rest                                                      
@@ -33,43 +33,40 @@ data NoteRestMod   = ModAcc Accents | ModDyn Dynamic | ModRel NoteRelat
 type Duration   = Ratio Int
 type Pitch      = Int            -- Absolute: C0=~16.35Hz,0; C1,12; C2,24
 -- Types: Layer 2
-data Rest  = Rest Duration       [NoteRestMod]  
-data Note  = Note {dur::Duration, pitch::Pitch, mods::[NoteRestMod]}  
+data Rest  = Rest { restdur::Duration, restmods :: [NoteRestMod] } deriving (Show)
+data Note  = Note {dur::Duration, pitch::Pitch, mods::[NoteRestMod]}  deriving (Show)
 
 --------------------------------------------------
 -- Global Modifiers/Annotations
 -- Types: Layer 1                
-data ClefSign = FClef | GClef | CClef | TabClef
+data ClefSign = FClef | GClef | CClef | TabClef   
 data Clef     = Clef {
                 clefsign   :: ClefSign,  -- Clef sign
                 clefline   :: Int,       -- Clef line
                 clefoctalt :: Int        -- Octave alteration
-                }
+                } deriving (Show)
 
-data Mode = Minor | Major deriving (Eq)
+data Mode = Minor | Major deriving (Show, Eq)
 -------------------------
 data Key = Key {
   fifths :: Int,          --  -11 to +11 (from circle of fifths)
   mode   :: Mode        -- Major, or minor
-  }
+  } deriving (Show)
 type Timing = Ratio Int   -- (Beats per measure % Beat division)
 
 -- Types: Layer 2
 data GlobalMod
   = ClefSym Clef |
     KeySym Key   |
-    TimingSym Timing
+    TimingSym Timing  deriving (Show)
 
 --------------------------------------------------
 -- Top level music type
 data MusElm = NoteElm  Note
              | RestElm Rest
-             | ModElm  [GlobalMod]
+             | ModElm  [GlobalMod] deriving (Show)
 type Position = Duration
 type Music = [(Position, MusElm)]          -- TODO: The global modifiers/annotations probably don't need Position
-
-data Note2  = Note2 {dur2::Duration, pitch2::Pitch, mods2::String}  deriving (Show)
-type Music2 = [(Position, Note2)]             
 
 ----------------------------------------------------------------------------------------------------                      
 -- MusicXML Type

@@ -15,67 +15,38 @@ import Data.Default
 
   
 main = do
-  d <- runX $ xunpickleDocument xpMusic            -- TODO: Return Music2 instead of [Music2]
+  d <- runX $ xunpickleDocument mxMeasure            -- TODO: Return Music2 instead of [Music2]
     [withValidate no
     -- ,withTrace 2
     ,withRemoveWS yes
     ,withPreserveComment no] "demo-score.xml"             
     -- >>> arrIO (\x -> do {print x; return x})
-  let d2 = postProcessing (head d)                     
+  let d2 = postProcessing d                    
   mapM print d2
   return ()
-  where postProcessing = id -- fixPositions 
+  where postProcessing = id.head -- fixPositions 
 
 ----------------------------------------------------------------------------------------------------                      
 -- Post Processing
 ----------------------------------------------------------------------------------------------------
-fixPositions :: [(Position, Note2)] -> Music2
-fixPositions m = evalState (mapM f m) (0%1)
-  where f (_, note) = do
-          let duration = dur2 note
-          position <- get             -- Get position for this note
-          put (position + duration)   -- Put position for next note
-          return (position, note)
+-- fixPositions :: [(Position, Note2)] -> Music2
+-- fixPositions m = evalState (mapM f m) (0%1)
+--   where f (_, note) = do
+--           let duration = dur2 note
+--           position <- get             -- Get position for this note
+--           put (position + duration)   -- Put position for next note
+--           return (position, note)
   
 ----------------------------------------------------------------------------------------------------                      
 -- Music Type Pickling
 ----------------------------------------------------------------------------------------------------
-instance XmlPickler Music2   where  xpickle = xpMusic
-instance XmlPickler Note2    where  xpickle = xpNote2
+
 instance XmlPickler Position where  xpickle = xpPrim :: PU (Ratio Int)
 -- instance XmlPickler MXStep where  xpickle = xpPrim
 
 instance (Default a, Eq a) => Default (PU a) where
   def = xpLift (def::a)
 
-xpMusic :: PU Music2
-xpMusic
-  = startPt $
-    xpList $
-    xpPair def xpickle 
-  where startPt a = xpElem "score-partwise" $                -- Select
-                    keepElem "part"    $ xpElem "part"    $  -- Fitler, select
-                    keepElem "measure" $ xpElem "measure" $  -- Filter, select
-                    keepElem "note" $ a                      -- Filter
-
-xpNote2 :: PU Note2
-xpNote2
-  = xpElem "note" $                       -- Create list out of selected note elems
-    keepElems ["pitch", "durationTest"] $          -- Ignore other elems
-    xpWrap (uncurry3 Note2,                        -- 
-            \t -> (dur2 t, pitch2 t, mods2 t)) $
-    xpTriple def (xpElem "pitch" xpPitch) def
-
--- xpDuration :: (Int,Int) -> PU Duration
--- xpDuration
---   (divs,beat) = 
-      
-xpPitch :: PU Pitch
-xpPitch = undefined
--- xpPitch = xpWrap (forward,backward) (xpTriple pstep poct palt)           
---   where pstep = (xpElem "step"   xpPrim)           :: PU MXStep
---         poct  = (xpElem "octave" xpickle)           :: PU Int
---         palt  = (xpOption $ xpElem "alter" xpickle) :: PU (Maybe Int)
     
 ----------------------------------------------------------------------------------------------------                      
 -- Helper functions
@@ -90,11 +61,11 @@ keepElem x = xpFilterCont (hasName x)
 ----------------------------------------------------------------------------------------------------                      
 -- MusicXml Pickler functions
 ----------------------------------------------------------------------------------------------------
-mxMeasure :: PU MXMeasure
+mxMeasure :: PU Music
 mxMeasure
-  = startPt $
+  = startPt $ xpWrap (forward,backward) $
     xpWrap (concat,undefined) $ xpList $ xpElem "measure" $
-    xpList $ xpickle 
+    xpList $ (xpickle :: PU MXMeasElm)
   where startPt a = xpElem "score-partwise" $                -- Select
                     keepElem "part"    $ xpElem "part"    $  -- Fitler, select
                     keepElem "measure" $ a                    -- Filter
