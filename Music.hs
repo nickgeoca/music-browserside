@@ -39,16 +39,32 @@ data Note  = Note {dur::Duration, pitch::Pitch, mods::[NoteRestMod]}
 --------------------------------------------------
 -- Global Modifiers/Annotations
 -- Types: Layer 1                
-data Clef     = Treble | Bass | Alto | Tenor                    
-type Key      = Int               -- ???? Major Keys: C=0; G=1; D=2... clockwise order
+data ClefSign = FClef | GClef | CClef | TabClef
+data Clef     = Clef {
+                clefsign   :: ClefSign,  -- Clef sign
+                clefline   :: Int,       -- Clef line
+                clefoctalt :: Int        -- Octave alteration
+                }
+
+data Mode = Minor | Major deriving (Eq)
+-------------------------
+data Key = Key {
+  fifths :: Int,          --  -11 to +11 (from circle of fifths)
+  mode   :: Mode        -- Major, or minor
+  }
+type Timing = Ratio Int   -- (Beats per measure % Beat division)
+
 -- Types: Layer 2
-data GlobalMod= ClefSym Clef | KeySym Key     -- Clef, Music key, etc
+data GlobalMod
+  = ClefSym Clef |
+    KeySym Key   |
+    TimingSym Timing
 
 --------------------------------------------------
 -- Top level music type
 data MusElm = NoteElm  Note
              | RestElm Rest
-             | ModElm  GlobalMod
+             | ModElm  [GlobalMod]
 type Position = Duration
 type Music = [(Position, MusElm)]          -- TODO: The global modifiers/annotations probably don't need Position
 
@@ -61,12 +77,12 @@ type Music2 = [(Position, Note2)]
 data MXStep = C | CD_ | D | DE_ | E | F | FG_ | G | GA_ | A | AB_ | B
               deriving (Show, Read, Enum)
 
-data MXClefSign = Gclef | Fclef
+type MXClefSign = ClefSign
 data MXMode = MXMinor | MXMajor deriving (Eq)
 -------------------------
-data MXClef = MXClef {
-  mxclefsign :: MXClefSign,  -- Clef sign
-  mxclefline :: Int          -- Clef line
+data MXKey = MXKey {
+  mxfifths :: Int,          -- 
+  mxmode   :: MXMode
   } deriving (Show, Read)
 
 data MXTime = MXTime {
@@ -74,9 +90,10 @@ data MXTime = MXTime {
   mxbeattype :: Int
   } deriving (Show, Read)
 
-data MXKey = MXKey {
-  mxfifths :: Int,
-  mxmode   :: MXMode
+data MXClef = MXClef {
+  mxclefsign   :: MXClefSign,  -- Clef sign
+  mxclefline   :: Int,         -- Clef line
+  mxclefoctalt :: Maybe Int
   } deriving (Show, Read)
 
 -----------
@@ -149,13 +166,29 @@ instance ConvertBothWay Music MXMeasure where
                 divs     = mxdivs a
                 beats    = mxbeats    $ mxtime a
                 beattype = mxbeattype $ mxtime a
+                modifier = ModElm [KeySym (forward $ mxkey a),
+                                   TimingSym (forward $ mxtime a),
+                                   ClefSym (forward $ mxclef a)]
             put $ state {sDivs = divs, sBeats = beats, sBeatType = beattype}
-            return (pos, undefined a) -- BUG!!!
+            return (pos, modifier)
   backward = undefined
 
--- instance ConvertBothWay MusElm MXAttr where
---  forward = 
+instance ConvertBothWay Key MXKey where
+  forward  (MXKey f MXMinor) = Key f Minor
+  forward  (MXKey f MXMajor) = Key f Major
+  backward (Key  f Minor) = MXKey f MXMinor
+  backward (Key  f Major) = MXKey f MXMajor
          
+instance ConvertBothWay Clef MXClef where
+  forward (MXClef sign line Nothing)       = forward (MXClef sign line (Just 0))
+  forward (MXClef sign line (Just octalt)) = Clef sign line octalt
+  backward (Clef sign line octalt) = MXClef sign line moctalt
+    where moctalt = if octalt == 0 then Nothing else Just octalt
+
+instance ConvertBothWay Timing MXTime where
+  forward  (MXTime beat beattype) = beat % beattype
+  backward t                      = MXTime (numerator t) (denominator t)
+
 -- 58: (C,5,-2) = (B,4,-1) = (AB_,4,0) = (A,4,+1) = (GA_,4,+2)
 -- 54: (G,4,-1) = (FG_,4,0) = (F,4,1)
 
@@ -209,9 +242,13 @@ instance Read MXMode where
   readsPrec _ _       = []
 
 instance Show MXClefSign where
-  show Gclef = "G"
-  show Fclef = "F"
+  show FClef   = "F"
+  show GClef   = "G"
+  show CClef   = "C"
+  show TabClef = "TAB"
 
 instance Read MXClefSign where
-  readsPrec _ "G" = [(Gclef, "")]
-  readsPrec _ "F" = [(Fclef, "")]  
+  readsPrec _ "F"   = [(FClef, "")]
+  readsPrec _ "G"   = [(GClef, "")]
+  readsPrec _ "C"   = [(CClef, "")]
+  readsPrec _ "TAB" = [(TabClef, "")]      

@@ -127,15 +127,16 @@ pAttr     = xpElem "attributes" $ wAttr
           pbeats = selNodeAndPickle "beats"             -- Time Beats per measure
           pbtyp  = selNodeAndPickle "beat-type"         -- Time Beat Division
 
-          pclef  = xpElem "clef" (wClef pcsign pcline)   :: PU MXClef       
+          pclef  = xpElem "clef" (wClef pcsign pcline pcalt)   :: PU MXClef       
           pcsign = selNodeAndPickle "sign"              -- Clef Sign   
-          pcline = selNodeAndPickle "line"              -- Clef Line   
+          pcline = selNodeAndPickle "line"              -- Clef Line
+          pcalt  = xpOption $ selNodeAndPickle "clef-octave-change" -- Clef octave change
 
           -- Wrap functions. Converts tuple to type and vice versa
           wAttr a b c d = xpWrap (uncurry4 MXAttr, \(MXAttr divs key time clef) -> (divs,key,time,clef)) $ xp4Tuple a b c d
           wKey a b = xpWrap (uncurry MXKey, \ (MXKey fifths mode) -> (fifths, mode)) $ xpPair a b
           wTime a b = xpWrap (uncurry MXTime, \(MXTime beats beatType) -> (beats, beatType)) $ xpPair a b
-          wClef a b = xpWrap (uncurry MXClef, \(MXClef sign line) -> (sign, line)) $ xpPair a b
+          wClef a b c = xpWrap (uncurry3 MXClef, \(MXClef sign line octalt) -> (sign, line, octalt)) $ xpTriple a b c
 
 ---- Measure Notes
 pNote     = xpElem "note" $ wNote
@@ -158,54 +159,3 @@ pNote     = xpElem "note" $ wNote
           wNote a b c d = xpWrap (uncurry4 MXNote, \(MXNote pitch dur voice notetype) -> (pitch,dur,voice,notetype)) $ xp4Tuple a b c d  
           wPitch a b c = xpWrap (uncurry3 MXPitch, \(MXPitch step oct alt) -> (step, oct, alt)) $ xpTriple a b c
 
-----------------------------------------------------------------------------------------------------                      
--- Example, figuring stuff out
-----------------------------------------------------------------------------------------------------
-
-----------------------------------------------------------------------------------------------------
--- Made up time parsing. Wanted to use state monad again.
-data TymeElmX= XTHour Int    | XTMeri Int     deriving (Show, Read)
-data TymeElm = THour Int Int | TMeri Int      deriving (Show, Read)              
-type TymeXml = [TymeElmX]
-type Tyme    = [TymeElm]
-
-xpTopLvlTyme = xpElem "time" $ xpTyme 
-
-xpTyme :: PU Tyme
-xpTyme = xpWrap (forward,backward)  $
-         xpList $
-         xpTymeX
-
-xpTymeX :: PU TymeElmX
-xpTymeX
-  = xpAlt tag ps
-    where tag (XTMeri _) = 0
-          tag (XTHour _) = 1
-          ps = [ xpWrap (XTMeri,
-                         \ (XTMeri i) -> i
-                        ) $
-                 xpElem "meridiem" xpickle
-               , xpWrap (XTHour,
-                         \ (XTHour h) -> h
-                        ) $
-                 xpElem "hour" xpickle
-               ]
-
-main2 = do
-  d <- runX $ xunpickleDocument xpTopLvlTyme
-       [withValidate no
-       ,withRemoveWS yes
-       ,withPreserveComment no] "test.xml"
-  mapM print $ head d
-  return ()
-
-instance ConvertBothWay Tyme TymeXml where
-  forward x = evalState (mapM f x) 0
-    where f (XTHour h) = do
-            m <- get
-            return (THour (h+m) m)
-          f (XTMeri m) = do
-            put m
-            return (TMeri m)
-
-  backward _ = []    
