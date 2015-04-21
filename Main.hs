@@ -23,7 +23,7 @@ main = do
   mapM print d2
   return ()
   where postProcessing = id.head -- fixPositions 
-                   
+
 ----------------------------------------------------------------------------------------------------                      
 -- MusicXml Pickler functions
 ----------------------------------------------------------------------------------------------------
@@ -40,11 +40,16 @@ pmusic
 
 instance XmlPickler MXMeasElm where
   xpickle = xpAlt tag ps
-    where tag (MXAttrElm _) = 0
-          tag (MXNoteElm _) = 1
-          ps = [ xpWrap (MXAttrElm, \(MXAttrElm a) -> a) pAttr
-               , xpWrap (MXNoteElm, \(MXNoteElm n) -> n) pNote
+    where tag (MXNoteElm _) = 0
+          tag (MXAttrElm _) = 1
+          tag (MXMeasNum _) = 2
+          ps = [ xpWrap (MXNoteElm, \(MXNoteElm n) -> n) pNote
+               , xpWrap (MXAttrElm, \(MXAttrElm a) -> a) pAttr
+               , xpWrap (MXMeasNum, \(MXMeasNum n) -> n) pMeasNum
                ]
+
+pMeasNum :: PU Int
+pMeasNum  = xpWrap (read, show) $ xpAttr "number" xpText
 
 -- Measure Attributes
 pAttr
@@ -53,26 +58,32 @@ pAttr
     pkey  -- Key
     ptime -- Time
     pclef -- Clef
-  where pdivs  = selNodeAndPickle "divisions"         -- Divisions per beat
+  where pdivs  = maySelNodeAndPickle "divisions"            -- Divisions per beat
 
-        pkey   = xpElem "key" (wKey pfif pmode)       :: PU MXKey
-        pfif   = selNodeAndPickle "fifths"            -- Key Fifths     
-        pmode  = selNodeAndPickle "mode"              -- Key Mode       
+        pkey   = xpOption $ xpElem "key" (wKey pfif pmode)  :: PU (Maybe MXKey)
+        pfif   = selNodeAndPickle "fifths"                  -- Key Fifths     
+        pmode  = selNodeAndPickle "mode"                    -- Key Mode       
 
-        ptime  = xpElem "time" (wTime pbeats pbtyp)    :: PU MXTime       
-        pbeats = selNodeAndPickle "beats"             -- Time Beats per measure
-        pbtyp  = selNodeAndPickle "beat-type"         -- Time Beat Division
+        ptime  = xpOption $
+                 xpElem "time" (wTime pbeats pbtyp pattr)   :: PU (Maybe MXTime)       
+        pbeats = selNodeAndPickle "beats"                   -- Time Beats per measure
+        pbtyp  = selNodeAndPickle "beat-type"               -- Time Beat Division
+        pattr  = xpOption $ xpWrap (read, show) $           -- Time Annotation
+                 xpAttr "symbol" xpText
 
-        pclef  = xpElem "clef" (wClef pcsign pcline pcalt)   :: PU MXClef       
-        pcsign = selNodeAndPickle "sign"              -- Clef Sign   
-        pcline = selNodeAndPickle "line"              -- Clef Line
-        pcalt  = xpOption $ selNodeAndPickle "clef-octave-change" -- Clef octave change
+        pclef  = xpOption $
+                 xpElem "clef" (wClef pcsign pcline pcalt)   :: PU (Maybe MXClef)       
+        pcsign = selNodeAndPickle "sign"                     -- Clef Sign   
+        pcline = xpDefault def $ selNodeAndPickle "line"     -- Clef Line             -- BUG: Should use xpWrap so (NoneClef,0) to MXML doesn't include line # 0
+        pcalt  = maySelNodeAndPickle "clef-octave-change"    -- Clef octave change
 
         -- Wrap functions. Converts tuple to type and vice versa
         wAttr a b c d = xpWrap (uncurry4 MXAttr, \(MXAttr divs key time clef) -> (divs,key,time,clef)) $ xp4Tuple a b c d
         wKey a b = xpWrap (uncurry MXKey, \ (MXKey fifths mode) -> (fifths, mode)) $ xpPair a b
-        wTime a b = xpWrap (uncurry MXTime, \(MXTime beats beatType) -> (beats, beatType)) $ xpPair a b
+        wTime a b c = xpWrap (uncurry3 MXTime, \(MXTime beats beatType anno) -> (beats, beatType, anno)) $ xpTriple a b c
         wClef a b c = xpWrap (uncurry3 MXClef, \(MXClef sign line octalt) -> (sign, line, octalt)) $ xpTriple a b c
+
+        maySelNodeAndPickle a = xpOption $ selNodeAndPickle a
 
 -- Measure Notes
 pNote
@@ -113,3 +124,4 @@ instance (Default a, Eq a) => Default (PU a) where
 -- Selects one XML Node and pickles with xpPrim
 selNodeAndPickle s = xpElem s xpPrim
         
+

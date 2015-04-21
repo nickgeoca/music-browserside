@@ -4,6 +4,7 @@
 module Music where
 import Data.Ratio
 import Control.Monad.State.Lazy
+import Data.Maybe
 
 ----------------------------------------------------------------------------------------------------                      
 -- Music Type
@@ -19,11 +20,12 @@ type NoteTie a = (KeyH,  -- Not key in music sense. Key when matching up to othe
                   a)     -- Can be any type
 -- Types: Layer 1
 data DynamicType   = Crescendo | Diminuendo deriving (Show)
-data NoteRelatType = Slur | Arpeggio                       deriving (Show)       
+data NoteRelatType = Slur | Arpeggio        deriving (Show)       
 -- Types: Layer 2
 data Accents       = Staccato | Tenuto deriving (Show)       -- Staccato, Tenuto, etc
 type Dynamic       = NoteTie DynamicType      -- Crescendo, Diminuendo, etc
 type NoteRelat     = NoteTie NoteRelatType    -- Slur, Arpeggio, etc
+
 -- Types: Layer 3
 data NoteRestMod   = ModAcc Accents | ModDyn Dynamic | ModRel NoteRelat deriving (Show)
 
@@ -48,7 +50,7 @@ data Note  = Note {
 --------------------------------------------------
 -- Global Modifiers/Annotations
 -- Types: Layer 1                
-data ClefSign = FClef | GClef | CClef | TabClef   
+data ClefSign = FClef | GClef | CClef | TabClef | PercClef | NoneClef
 data Clef     = Clef {
                 clefsign   :: ClefSign,  -- Clef sign
                 clefline   :: Int,       -- Clef line
@@ -58,16 +60,18 @@ data Clef     = Clef {
 data Mode = Minor | Major deriving (Show, Eq)
 -------------------------
 data Key = Key {
-  fifths :: Int,          --  -11 to +11 (from circle of fifths)
-  mode   :: Mode        -- Major, or minor
+  keyfifths :: Int,       --  -11 to +11 (from circle of fifths)
+  keymode   :: Mode       -- Major, or minor
   } deriving (Show)
 type Timing = Ratio Int   -- (Beats per measure % Beat division)
+data TimeAnno = TimeCommon
 
 -- Types: Layer 2
 data GlobalMod
-  = ClefSym Clef |
-    KeySym Key   |
-    TimingSym Timing  deriving (Show)
+  = ClefSym Clef      |
+    KeySym Key        |
+    TimingSym Timing  |
+    AnnoTime TimeAnno    deriving (Show)
 
 --------------------------------------------------
 -- Top level music type
@@ -82,7 +86,7 @@ type Music = [(Position, MusElm)]          -- TODO: The global modifiers/annotat
 ----------------------------------------------------------------------------------------------------
 data MXStep = C | CD_ | D | DE_ | E | F | FG_ | G | GA_ | A | AB_ | B
               deriving (Show, Read, Enum)
-
+type MXTimeAnno = TimeAnno
 type MXClefSign = ClefSign
 data MXMode = MXMinor | MXMajor deriving (Eq)
 -------------------------
@@ -93,7 +97,8 @@ data MXKey = MXKey {
 
 data MXTime = MXTime {
   mxbeats    :: Int,
-  mxbeattype :: Int
+  mxbeattype :: Int,
+  mxtimeanno :: Maybe MXTimeAnno
   } deriving (Show, Read)
 
 data MXClef = MXClef {
@@ -109,14 +114,14 @@ data MXPitch = MXPitch {
   mxalter   :: Maybe Int   -- Pitch alter
   } deriving (Show, Read)
 
-data MXNoteType = Hn | Qn | En | Sn | Tn | S64n | On deriving (Enum)                  
+data MXNoteType = Wn | Hn | Qn | En | Sn | Tn | S64n | On deriving (Enum)                  
 
 -------------------------
 data MXAttr = MXAttr {
-  mxdivs :: Int,
-  mxkey  :: MXKey,
-  mxtime :: MXTime,
-  mxclef :: MXClef  
+  mxdivs    :: Maybe Int,
+  mxkey     :: Maybe MXKey,
+  mxtime    :: Maybe MXTime,
+  mxclef    :: Maybe MXClef  
   } deriving (Show, Read)
 
 data MXNote = MXNote {
@@ -128,7 +133,11 @@ data MXNote = MXNote {
 
 -------------------------
 
-data MXMeasElm = MXNoteElm MXNote | MXAttrElm MXAttr deriving (Show, Read)
+data MXMeasElm = MXNoteElm MXNote |
+                 MXAttrElm MXAttr |
+                 MXMeasNum Int       -- Int is measure number: <measure number="1">
+               deriving (Show, Read)
+
 type MXMeasure = [MXMeasElm]
                  
 -- TODO: Parsing
@@ -145,40 +154,54 @@ class ConvertBothWay a b where
   backward :: a -> b 
     
 data MusMXMeasState = MusMXMeasState {
-  sDivs::Int,
-  sBeats::Int,
-  sBeatType::Int,
-  sPosition::Duration
+  sMeasNum  :: Int,
+  sDivs     :: Int,
+  sBeats    :: Int,
+  sBeatType :: Int,
+  sPosition :: Duration
   }
 
 instance ConvertBothWay Music MXMeasure where
-  forward mxMeas = evalState (mapM f mxMeas) $ MusMXMeasState 0 0 0 (0%1)
-    where f :: MXMeasElm -> State MusMXMeasState (Position, MusElm)
+  forward mxMeas = evalState (mapM f filteredMeasure) $ MusMXMeasState 1 0 0 0 (0%1) -- (MeasNum, divisions, beats, beat-type, position)
+    where filteredMeasure = filter notMeasurePartNumber mxMeas
+          notMeasurePartNumber (MXMeasNum _) = False
+          notMeasurePartNumber _             = True
+
+          f :: MXMeasElm -> State MusMXMeasState (Position, MusElm)
           f (MXNoteElm n) = do
             state <- get
             let divisionDur = mxduration n
                 beatType    = sBeatType state
                 divisions   = sDivs state
                 noteDuration= divisionDur % (beatType * divisions)
-                oldPosition = sPosition state
-                newPosition = oldPosition + noteDuration
                 ptch        = forward $ mxpitch n
                 note        = Note noteDuration ptch []
+                oldPosition = sPosition state
+                newPosition = oldPosition + noteDuration
             put $ state {sPosition = newPosition}
             return (oldPosition, NoteElm note)
+
           f (MXAttrElm a) = do
-            state <- get
-            let pos      = sPosition state
-                divs     = mxdivs a
-                beats    = mxbeats    $ mxtime a
-                beattype = mxbeattype $ mxtime a
-                modifier = ModElm [KeySym (forward $ mxkey a),
-                                   TimingSym (forward $ mxtime a),
-                                   ClefSym (forward $ mxclef a)]
-            put $ state {sDivs = divs, sBeats = beats, sBeatType = beattype}
-            return (pos, modifier)
+            let ms = [ (Just . AnnoTime  . forward) =<< mxtimeanno =<< (mxtime a)
+                     , (Just . KeySym    . forward) =<< (mxkey a) 
+                     , (Just . TimingSym . forward) =<< (mxtime a)
+                     , (Just . ClefSym   . forward) =<< (mxclef a)
+                     ]
+                modsAnnos = ModElm $ catMaybes ms
+            st <- get
+            put $ st { sDivs     = fromMaybe (sDivs st) (mxdivs a)
+                     , sBeats    = maybe (sBeats st) mxbeats (mxtime a)
+                     , sBeatType = maybe (sBeatType st) mxbeattype (mxtime a)
+                     }
+            return (sPosition st, modsAnnos)
+
+  
   backward = undefined
 
+instance ConvertBothWay TimeAnno TimeAnno where
+  forward  = id
+  backward = id
+  
 instance ConvertBothWay Key MXKey where
   forward  (MXKey f MXMinor) = Key f Minor
   forward  (MXKey f MXMajor) = Key f Major
@@ -192,8 +215,8 @@ instance ConvertBothWay Clef MXClef where
     where moctalt = if octalt == 0 then Nothing else Just octalt
 
 instance ConvertBothWay Timing MXTime where
-  forward  (MXTime beat beattype) = beat % beattype
-  backward t                      = MXTime (numerator t) (denominator t)
+  forward  (MXTime beat beattype _) = beat % beattype
+  backward t                        = MXTime (numerator t) (denominator t) Nothing  -- BUG: Timing/MXTime
 
 -- 58: (C,5,-2) = (B,4,-1) = (AB_,4,0) = (A,4,+1) = (GA_,4,+2)
 -- 54: (G,4,-1) = (FG_,4,0) = (F,4,1)
@@ -220,6 +243,7 @@ instance ConvertBothWay Pitch MXPitch where
 -- Read/Show Instances
 instance Show MXNoteType where
   show a = case a of
+    Wn -> "whole"
     Hn -> "half"
     Qn -> "quarter"
     En -> "eight"
@@ -227,8 +251,10 @@ instance Show MXNoteType where
     Tn -> "32nd"
     S64n->"64th"
     On -> "128th"
+
 instance Read MXNoteType where
   readsPrec _ a = case a of
+    "whole"   -> [(Wn, "")]
     "half"    -> [(Hn, "")]
     "quarter" -> [(Qn, "")]
     "eight"   -> [(En, "")]
@@ -248,13 +274,26 @@ instance Read MXMode where
   readsPrec _ _       = []
 
 instance Show MXClefSign where
-  show FClef   = "F"
-  show GClef   = "G"
-  show CClef   = "C"
-  show TabClef = "TAB"
+  show FClef    = "F"
+  show GClef    = "G"
+  show CClef    = "C"
+  show TabClef  = "TAB"
+  show PercClef = "percussion"
+  show NoneClef = "none"
 
 instance Read MXClefSign where
-  readsPrec _ "F"   = [(FClef, "")]
-  readsPrec _ "G"   = [(GClef, "")]
-  readsPrec _ "C"   = [(CClef, "")]
-  readsPrec _ "TAB" = [(TabClef, "")]      
+  readsPrec _ "F"          = [(FClef, "")]
+  readsPrec _ "G"          = [(GClef, "")]
+  readsPrec _ "C"          = [(CClef, "")]
+  readsPrec _ "TAB"        = [(TabClef, "")]
+  readsPrec _ "percussion" = [(PercClef, "")]
+  readsPrec _ "none"       = [(NoneClef, "")]
+
+instance Show TimeAnno where
+  show TimeCommon = "common"
+
+instance Read TimeAnno where
+  readsPrec _ "common" = [(TimeCommon, "")]
+                  
+
+
