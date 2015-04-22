@@ -9,6 +9,7 @@ import Text.XML.HXT.HTTP
 import Data.Ratio
 import Control.Monad.State.Lazy
 import Music               -- This is to import the Music type
+import MXml  
 import Data.Default  
 
   
