@@ -1,4 +1,5 @@
 {-# LANGUAGE TypeSynonymInstances #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE FlexibleInstances #-}
 
 import Haste
@@ -8,7 +9,7 @@ import Prelude hiding(id,div)
 import Haste.HPlay.View
 import GHC.Float
 import Data.Ratio
-import Music
+import Music BUG
 
 ----------------------------------------------------------------------------------------------------                      
 -- Main code
@@ -29,7 +30,7 @@ main = do
   render can $ do
     translate (20,20) $ do
     staffShape (0,0) 100
-    sequence_ $ drawCanvas musicSimple
+    sequence_ $ drawCanvas musicTest
   --  sequence_ [ translate ( 10 + x_ * 120, 10 + y_ * 80) $ do 
   --    staffShape (0,0) 100 
   --    qnShape (0, 20); qnShape (10, 0); qnShape (20, 25); qnShape (30, 0) ; qnShape (40, 40); qnShape (50, 20)  
@@ -59,7 +60,6 @@ gSGS = ScoreGraphicSettings 10 5 40
 qnShape (x,y) = fill $ do circle (x,y) (qnSize gSGS); line (x-29,y-50) (x+20,y+20)
 
 musDur n d = n % d :: Ratio Int -- % :: Integral a => a -> a -> Ratio a infixl 7
-
   
 
 ----------------------------------------------------------------------------------------------------                      
@@ -96,32 +96,27 @@ class Dy a where
 instance Dy Note where
   noteDy clef note  = noteDy clef (pitch note)
 instance Dy Pitch where
-  noteDy clef pitch = let start = case clef of
-                                   Treble -> 52 -- E4
-                                   Bass   -> 31 -- G2
-                                   Alto   -> 41 -- F3
-                                   Tenor  -> 38 -- D3
-                          dy     = noteAnnoDy noteAnno
-                          dCount = fromIntegral $ noteDYMeasure start pitch
-                      in dy * dCount
+  noteDy (Clef sign line octaveAlt) pitch
+    = let sn = case sign of
+                   FClef    -> 2
+                   GClef    -> 0
+                   CClef    -> (-2)
+                   TabClef  -> 0
+                   PercClef -> 0
+                   NoneClef -> 0
+          ln = line * 2
+          on = octaveAlt * 7
+
+          d1 = 26 + ln + on + sn
+          d2 = semiTonesToTones pitch 0
+
+          dCount = fromIntegral $ d2 - d1
+          dy = noteAnnoDy noteAnno
+      in dy * dCount
   
 instance Num Point where
   (x1,y1) + (x2,y2) = (x1+x2, y1+y2)
 
--- TODO: Using 'list' method right now, but may change logic away from list.
-noteDYMeasure
-  startNote note = let dis = abs $ startNote - note
-                       s = startNote `mod` 12
-                       d1 = dis `mod` 12
-                       d2 = (quot dis 12) * 7
-                       ls = cycle ([1,0,1,0,1]++[1,0,1,0,1,0,1])
-                       ds = sum $ take d1 $ drop s ls
-                       forward  = d2 + ds
-                       backward = d2 + 7 - ds
-                   in if (startNote - note) < 0 then forward else backward
-
-
-                                                         
 drawCanvas :: Music -> [Picture ()]
 drawCanvas m = drawCanvas_ m [] 0
 
@@ -129,7 +124,7 @@ drawCanvas_ :: Music -> [Picture ()] -> Double -> [Picture ()]
 drawCanvas_ []          pics _        = pics  
 drawCanvas_ ((p,e):mus) pics xDispAcc = drawCanvas_ mus (pic:pics) (xDispAcc + xDispNew)
   where (pic, xDispNew) = case e of 
-                           NoteElm n -> let coor1 = (0, (measureHeight gSGS) - (noteDy Treble n))
+                           NoteElm n -> let coor1 = (0, (measureHeight gSGS) - (noteDy (Clef GClef 2 0) n)) 
                                             coor2 = coor1 + (xDispAcc, 0)
                                         in (notePic n coor2, (bufferX noteAnno))
                          -- RestElm r -> 2
@@ -138,70 +133,20 @@ drawCanvas_ ((p,e):mus) pics xDispAcc = drawCanvas_ mus (pic:pics) (xDispAcc + x
 ----------------------------------------------------------------------------------------------------                      
 -- Examples
 ----------------------------------------------------------------------------------------------------  
--- Example             
--- qnE4Slur1: quarter note; pitch e4; slur 1/2 (2 note slur)
-qnE4Slur1 :: Note
-qnE4Slur1 = Note (musDur 1 4) 52 [(ModRel
-                                   (0,      -- 'hashkey' of 0
-                                    2,      -- Two notes total
-                                    Slur))]             
-
--- qnG4Slur2: quarter note; pitch g4; slur 2/2 (2 note slur)
-qnG4Slur2 :: Note
-qnG4Slur2 = Note (musDur 1 4) 55 [(ModRel
-                                   (0,      -- 'hashkey' of 0
-                                    2,      -- Two notes total
-                                    Slur))]                         
-
--- enF4: eigth note; pitch f4
-enF4 :: Note
-enF4 = Note (musDur 1 8) 53 []
-trebClef :: GlobalMod
-trebClef = ClefSym Treble
-keyC :: GlobalMod
-keyC = KeySym 0
 
 musicTest :: Music       
-musicTest = [(musDur 0 0, ModElm  keyC),
-             (musDur 0 0, ModElm  trebClef),
-             (musDur 0 0, NoteElm qnE4Slur1),
-             (musDur 0 0, NoteElm enF4),
-             (musDur 1 4, NoteElm qnG4Slur2),
-             (musDur 2 4, NoteElm enF4),
-             (musDur 3 4, NoteElm enF4)]
-
-qnF4 :: Note -- Quarter note. F4
-qnF4 =  Note (musDur 1 4) 53 []
-qnG4 =  Note (musDur 1 4) 55 []
-qnA4 =  Note (musDur 1 4) 57 []
-qnB4 =  Note (musDur 1 4) 59 []
-        
--- Four successive F quarter notes. Assume treble clef & 4/4 time.
--- Measure will look like link below. Without treble clef and 4/4 timing.
--- http://stringstudies.com/wp-content/uploads/2013/09/5.gif        
-musicSimple :: Music       
-musicSimple = [(musDur 0 0, NoteElm qnF4),
-               (musDur 1 4, NoteElm qnG4),
-               (musDur 2 4, NoteElm qnA4),
-               (musDur 3 4, NoteElm qnB4)]      
+musicTest = [ (0 % 1,ModElm [AnnoTime TimeCommon,KeySym (Main.Key {keyfifths = 0, keymode = Major}),TimingSym (1 % 1),ClefSym (Clef {clefsign = GClef, clefline = 2, clefoctalt = 0})])
+            , (0 % 1,NoteElm (Note {dur = 1 % 4, pitch = 53, mods = []}))
+            , (1 % 4,NoteElm (Note {dur = 1 % 4, pitch = 55, mods = []}))
+            , (1 % 2,NoteElm (Note {dur = 1 % 4, pitch = 57, mods = []}))
+            , (3 % 4,NoteElm (Note {dur = 1 % 4, pitch = 59, mods = []}))
+            , (1 % 1,NoteElm (Note {dur = 1 % 4, pitch = 48, mods = []}))
+            , (5 % 4,NoteElm (Note {dur = 1 % 4, pitch = 50, mods = []}))
+            , (3 % 2,NoteElm (Note {dur = 1 % 4, pitch = 52, mods = []}))
+            , (7 % 4,NoteElm (Note {dur = 1 % 4, pitch = 53, mods = []}))
+            ]
 
 ----------------------------------------------------------------------------------------------------                      
 -- Notes, ideas, etc. Might be out of date
 ----------------------------------------------------------------------------------------------------
---
--- Duration depends on time signature. Ex: 4/4 will be 64
--- musicScoreChunkify (MusElem elm scr) xss xs dur = xs
--- musicScoreChunkify End xss xs dur = xss -- TODO: fill in rest notes for remaining duration
 
--- TODO: Maybe have musicsequence be complete (in sense it can play regardless of knowing key, timing etc). Then have an annotation type Timing, Key, etc
--- What creating note/rests, etc is roughly going to look like
---------------------------------------------------------------
--- Music :: qqqq hqq eheee eeeeqq eReReeqq
--- Bite off measure at time
--- Measure :: qqqq
--- Return (picture, staff distance)?
---  * Figure out grouping
---  * Grouping :: g1qq (eeeeqq)
---  * Figure out how far off staff (may need line thu note, or above/below it)
---  * Figure out sharp/flat. May need to be before grouping
---  * Draw

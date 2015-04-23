@@ -8,6 +8,9 @@ import Data.Ratio
 import Control.Monad.State.Lazy
 import Data.Maybe
 
+-- BUG: Consider case of multi attribute in single measure. Example, mutliple clefs in a single measure.
+--  
+
 ----------------------------------------------------------------------------------------------------                      
 -- MusicXML Type
 ----------------------------------------------------------------------------------------------------
