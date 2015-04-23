@@ -112,35 +112,22 @@ instance Read ClefSign where
   readsPrec _ "percussion" = [(PercClef, "")]
   readsPrec _ "none"       = [(NoneClef, "")]
 
--- Converts tone count, to semi-tone count
-tonesToSemiTones tones pitch =
-  let note  = pitch `mod` 12
-      ns    = cycle ([1, 0, 1, 0, 1] ++ [1, 0, 1, 0, 1, 0, 1])
-      ds    = drop (note + 1) ns
-      cnt   = getCount ds (abs tones) 0     -- Unoptimized if tones over/under 7/-7... Faster, but doesn't account for negatives:  (getCount ds (tones `mod` 7) (12*(quot tones 7)))
-  in  neg2IfNeg1 cnt tones
-  where getCount (l:ls) decr c = if decr == 0
-                                 then c
-                                 else getCount ls (decr - l) (c + 1)
-        neg2IfNeg1 n1 n2 = if n2 < 0
-                           then negate n1
-                           else n1
-
-semiTonesToTones semis pitch =
+-- Converts semi steps to whole steps
+semiStepsToSteps semis pitch =
   let ls = cycle ([1,0,1,0,1]++[1,0,1,0,1,0,1])
       note = pitch `mod` 12
-      tones = sum $
+      steps = sum $
               take (abs semis) $
               drop (note+1) ls
-  in if semis < 0 then (negate tones) else tones
+  in if semis < 0 then (negate steps) else steps
 
--- Converts tone count, to semi-tone count
-tonesToSemiTones tones pitch =
+-- Converts wholestep count, to semi-step count
+stepsToSemiSteps steps pitch =
   let note  = pitch `mod` 12
       ns    = cycle ([1, 0, 1, 0, 1] ++ [1, 0, 1, 0, 1, 0, 1])
       ds    = drop (note + 1) ns
-      cnt   = getCount ds (abs tones) 0     -- Unoptimized if tones over/under 7/-7... Faster, but doesn't account for negatives:  (getCount ds (tones `mod` 7) (12*(quot tones 7)))
-  in  neg2IfNeg1 cnt tones
+      cnt   = getCount ds (abs steps) 0     -- Unoptimized if tones over/under 7/-7... Faster, but doesn't account for negatives:  (getCount ds (tones `mod` 7) (12*(quot tones 7)))
+  in  neg2IfNeg1 cnt steps
   where getCount (l:ls) decr c = if decr == 0
                                  then c
                                  else getCount ls (decr - l) (c + 1)

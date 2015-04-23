@@ -108,7 +108,7 @@ instance Dy Pitch where
           on = octaveAlt * 7
 
           d1 = 26 + ln + on + sn
-          d2 = semiTonesToTones pitch 0
+          d2 = semiStepsToSteps pitch 0
 
           dCount = fromIntegral $ d2 - d1
           dy = noteAnnoDy noteAnno
@@ -128,25 +128,24 @@ drawCanvas_ ((p,e):mus) pics xDispAcc = drawCanvas_ mus (pic:pics) (xDispAcc + x
                                             coor2 = coor1 + (xDispAcc, 0)
                                         in (notePic n coor2, (bufferX noteAnno))
                          -- RestElm r -> 2
-                         -- ModElm  m -> 3
+                           ModElm  m -> 3
         
 ----------------------------------------------------------------------------------------------------                      
 -- Examples
 ----------------------------------------------------------------------------------------------------  
 
 musicTest :: Music       
-musicTest = [ (0 % 1,ModElm [AnnoTime TimeCommon,KeySym (Main.Key {keyfifths = 0, keymode = Major}),TimingSym (1 % 1),ClefSym (Clef {clefsign = GClef, clefline = 2, clefoctalt = 0})])
-            , (0 % 1,NoteElm (Note {dur = 1 % 4, pitch = 53, mods = []}))
-            , (1 % 4,NoteElm (Note {dur = 1 % 4, pitch = 55, mods = []}))
-            , (1 % 2,NoteElm (Note {dur = 1 % 4, pitch = 57, mods = []}))
-            , (3 % 4,NoteElm (Note {dur = 1 % 4, pitch = 59, mods = []}))
-            , (1 % 1,NoteElm (Note {dur = 1 % 4, pitch = 48, mods = []}))
-            , (5 % 4,NoteElm (Note {dur = 1 % 4, pitch = 50, mods = []}))
-            , (3 % 2,NoteElm (Note {dur = 1 % 4, pitch = 52, mods = []}))
-            , (7 % 4,NoteElm (Note {dur = 1 % 4, pitch = 53, mods = []}))
+musicTest = [ (0 % 1, ModElm [AnnoTime TimeCommon,
+                              KeySym (Main.Key {keyfifths = 0, keymode = Major}),
+                              TimingSym (1 % 1),
+                              ClefSym (Clef {clefsign = GClef, clefline = 2, clefoctalt = 0})])
+            , (0 % 1, NoteElm (Note {dur = 1 % 4, pitch = 53, mods = []}))
+            , (1 % 4, NoteElm (Note {dur = 1 % 4, pitch = 55, mods = []}))
+            , (1 % 2, NoteElm (Note {dur = 1 % 4, pitch = 57, mods = []}))
+            , (3 % 4, NoteElm (Note {dur = 1 % 4, pitch = 59, mods = []}))
+            , (1 % 1, NoteElm (Note {dur = 1 % 4, pitch = 48, mods = []}))
+            , (5 % 4, NoteElm (Note {dur = 1 % 4, pitch = 50, mods = []}))
+            , (3 % 2, NoteElm (Note {dur = 1 % 4, pitch = 52, mods = []}))
+            , (7 % 4, NoteElm (Note {dur = 1 % 4, pitch = 53, mods = []}))
             ]
-
-----------------------------------------------------------------------------------------------------                      
--- Notes, ideas, etc. Might be out of date
-----------------------------------------------------------------------------------------------------
-
+           
