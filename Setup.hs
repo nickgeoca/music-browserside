@@ -127,8 +127,8 @@ drawCanvas_ ((p,e):mus) pics xDispAcc = drawCanvas_ mus (pic:pics) (xDispAcc + x
                            NoteElm n -> let coor1 = (0, (measureHeight gSGS) - (noteDy (Clef GClef 2 0) n)) 
                                             coor2 = coor1 + (xDispAcc, 0)
                                         in (notePic n coor2, (bufferX noteAnno))
-                         -- RestElm r -> 2
-                           ModElm  m -> 3
+                          -- RestElm r -> 2
+                          -- ModElm  m -> 3
         
 ----------------------------------------------------------------------------------------------------                      
 -- Examples
