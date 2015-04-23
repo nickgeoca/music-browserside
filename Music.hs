@@ -70,8 +70,8 @@ data TimeAnno = TimeCommon
 data GlobalMod
   = ClefSym Clef      |
     KeySym Key        |
-    TimingSym Timing  |
-    AnnoTime TimeAnno    deriving (Show)
+    AnnoTime TimeAnno |
+    TimingSym Timing  deriving (Show)
 
 --------------------------------------------------
 -- Top level music type
@@ -87,6 +87,23 @@ class ConvertBothWay a b where
   forward  :: b -> a
   backward :: a -> b 
     
+instance Ord GlobalMod where
+  compare a b = if a == b
+                then EQ
+                else fn a b
+    where fn (ClefSym _)   _ = GT
+          fn (KeySym _)    _ = GT
+          fn (AnnoTime _)  _ = GT
+          fn (TimingSym _) _ = GT
+          fn _ _ = LT
+
+instance Eq GlobalMod where
+  (==) (ClefSym _)   (ClefSym _)   = True
+  (==) (KeySym _)    (KeySym _)    = True
+  (==) (AnnoTime _)  (AnnoTime _)  = True
+  (==) (TimingSym _) (TimingSym _) = True
+  (==) _ _ = False
+  
 
 instance Show TimeAnno where
   show TimeCommon = "common"

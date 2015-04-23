@@ -114,7 +114,7 @@ instance ConvertBothWay Music MXMeasure where
                      , (Just . TimingSym . forward) =<< (mxtime a)
                      , (Just . ClefSym   . forward) =<< (mxclef a)
                      ]
-                modsAnnos = ModElm $ catMaybes ms
+                modsAnnos = sort . ModElm . catMaybes ms               -- NOTE: Sorting at data conversion is safer as long as it is done consistently. 
             st <- get
             put $ st { sDivs     = fromMaybe (sDivs st) (mxdivs a)
                      , sBeats    = maybe (sBeats st) mxbeats (mxtime a)

@@ -127,8 +127,8 @@ drawCanvas_ ((p,e):mus) pics xDispAcc = drawCanvas_ mus (pic:pics) (xDispAcc + x
                            NoteElm n -> let coor1 = (0, (measureHeight gSGS) - (noteDy (Clef GClef 2 0) n)) 
                                             coor2 = coor1 + (xDispAcc, 0)
                                         in (notePic n coor2, (bufferX noteAnno))
-                          -- RestElm r -> 2
-                          -- ModElm  m -> 3
+                           -- RestElm r -> 2
+                           -- ModElm  m -> 
         
 ----------------------------------------------------------------------------------------------------                      
 -- Examples
@@ -148,4 +148,8 @@ musicTest = [ (0 % 1, ModElm [AnnoTime TimeCommon,
             , (3 % 2, NoteElm (Note {dur = 1 % 4, pitch = 52, mods = []}))
             , (7 % 4, NoteElm (Note {dur = 1 % 4, pitch = 53, mods = []}))
             ]
-           
+
+
+----------------------------------------------------------------------------------------------------                      
+-- Notes, ideas, etc. Might be out of date
+----------------------------------------------------------------------------------------------------
