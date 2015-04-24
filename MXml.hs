@@ -7,6 +7,7 @@ import Music
 import Data.Ratio
 import Control.Monad.State.Lazy
 import Data.Maybe
+import Data.List  
 
 -- BUG: Consider case of multi attribute in single measure. Example, mutliple clefs in a single measure.
 --  
@@ -109,12 +110,11 @@ instance ConvertBothWay Music MXMeasure where
             return (oldPosition, NoteElm note)
 
           f (MXAttrElm a) = do
-            let ms = [ (Just . AnnoTime  . forward) =<< mxtimeanno =<< (mxtime a)
+            let ms = [ (Just . ClefSym   . forward) =<< (mxclef a)
                      , (Just . KeySym    . forward) =<< (mxkey a) 
                      , (Just . TimingSym . forward) =<< (mxtime a)
-                     , (Just . ClefSym   . forward) =<< (mxclef a)
                      ]
-                modsAnnos = sort . ModElm . catMaybes ms               -- NOTE: Sorting at data conversion is safer as long as it is done consistently. 
+                modsAnnos = ModElm $ sort $ catMaybes ms               -- NOTE: Sorting at data conversion is safer as long as it is done consistently. 
             st <- get
             put $ st { sDivs     = fromMaybe (sDivs st) (mxdivs a)
                      , sBeats    = maybe (sBeats st) mxbeats (mxtime a)
@@ -142,8 +142,8 @@ instance ConvertBothWay Clef MXClef where
     where moctalt = if octalt == 0 then Nothing else Just octalt
 
 instance ConvertBothWay Timing MXTime where
-  forward  (MXTime beat beattype _) = beat % beattype
-  backward t                        = MXTime (numerator t) (denominator t) Nothing  -- BUG: Timing/MXTime
+  forward  (MXTime beat beattype anno) = Timing beat beattype anno
+  backward (Timing beat beattype anno) = MXTime beat beattype anno  
 
 -- 58: (C,5,-2) = (B,4,-1) = (AB_,4,0) = (A,4,+1) = (GA_,4,+2)
 -- 54: (G,4,-1) = (FG_,4,0) = (F,4,1)

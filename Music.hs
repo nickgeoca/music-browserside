@@ -63,7 +63,7 @@ data Key = Key {
   keyfifths :: Int,       --  -11 to +11 (from circle of fifths)
   keymode   :: Mode       -- Major, or minor
   } deriving (Show)
-type Timing = Ratio Int   -- (Beats per measure % Beat division)
+data Timing = Timing Int Int (Maybe TimeAnno) deriving (Show)  -- Beats per measure, Beat division, ..
 data TimeAnno = TimeCommon
 
 -- Types: Layer 2
@@ -91,16 +91,14 @@ instance Ord GlobalMod where
   compare a b = if a == b
                 then EQ
                 else fn a b
-    where fn (ClefSym _)   _ = GT
-          fn (KeySym _)    _ = GT
-          fn (AnnoTime _)  _ = GT
-          fn (TimingSym _) _ = GT
-          fn _ _ = LT
+    where fn (TimingSym _)           _  = GT   -- Greatest
+          fn (KeySym _)   (TimingSym _) = LT
+          fn (ClefSym _)             _  = LT   -- Least
+          fn _                       _  = GT
 
 instance Eq GlobalMod where
   (==) (ClefSym _)   (ClefSym _)   = True
   (==) (KeySym _)    (KeySym _)    = True
-  (==) (AnnoTime _)  (AnnoTime _)  = True
   (==) (TimingSym _) (TimingSym _) = True
   (==) _ _ = False
   
@@ -151,3 +149,11 @@ stepsToSemiSteps steps pitch =
         neg2IfNeg1 n1 n2 = if n2 < 0
                            then negate n1
                            else n1
+
+-- Think about using a table similar to this one for step conversion.
+{-
+[(12,7),(11,6),(10,5),(9,5),(8,4),(7,4),(6,3),(5,3),(4,2),(3,1),(2,1),(1,0)
+,(0,0)
+,(-1,0),(-2,-1),(-3,-1),(-4,-2),(-5,-3),(-6,-3),(-7,-4),(-8,-4),(-9,-5),(-10,-5),(-11,-6),(-12,-7)
+]
+-}        
