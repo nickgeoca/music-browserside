@@ -75,7 +75,8 @@ data GlobalMod
 
 --------------------------------------------------
 -- Top level music type
-data MusElm = NoteElm  Note
+-- TODO: Assume certain properties, or run function to verify in all cases? Such as sort parallel notes by duration. Then group, then sort by length of group                               
+data MusElm = NoteElm  [Note]
              | RestElm Rest
              | ModElm  [GlobalMod] deriving (Show)
 type Position = Duration
