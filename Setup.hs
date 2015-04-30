@@ -2,27 +2,43 @@
              MultiParamTypeClasses,
              FlexibleInstances,
              DeriveDataTypeable,
-             ForeignFunctionInterface  #-}
+             ForeignFunctionInterface,
+             GeneralizedNewtypeDeriving  #-}
 
 import Haste
-import Haste.Graphics.Canvas hiding (Ctx)
-import Haste.Perch
+import Haste.Graphics.Canvas hiding (Ctx, Shape)
+import Haste.Perch hiding (map, head)
 import Prelude hiding(id,div)
-import Haste.HPlay.View
+import Haste.HPlay.View hiding (map, head)
 import GHC.Float
 import Data.Ratio
+import Data.Typeable
 import Control.Monad.IO.Class
 import Haste.Foreign
 import Haste.Prim (toJSStr)
+import System.IO.Unsafe
+import Unsafe.Coerce  
 import Debug.Trace
-import Data.Typeable  
 import Data.List
+import Data.Ord (comparing)
 -- import Music -- BUG
 
+foreign import ccall jsMoveTo :: Ctx -> Double -> Double -> IO ()
+foreign import ccall jsQuadraticCurveTo :: Ctx
+                           -> Double -> Double
+                           -> Double -> Double
+                           -> IO ()
+
+newtype Ctx = Ctx JSAny
+            deriving (Pack, Unpack)
+newtype Shape a = Shape {unS :: Ctx -> IO a}
+  
 ----------------------------------------------------------------------------------------------------                      
 -- Main code
 ----------------------------------------------------------------------------------------------------  
-main = runBody $ do
+main = do
+  addHeader jsHeader
+  runBody $ do
   wraw $ do center $ canvas ! id "canvas" 
                      ! Haste.Perch.style "border: 1px solid black;" 
                      ! atr "width" "600" 
@@ -39,6 +55,8 @@ main = runBody $ do
     staffShape (0,0) 100
     sequence_ pic
 
+-- jsHeader :: Perch
+jsHeader = script ! atr "type" "text/javascript" ! src "https://rawgit.com/nickgeoca/js_misc/master/misc.js" $ noHtml
 ----------------------------------------------------------------------------------------------------                      
 -- Old Graphics (still sort of used)
 ----------------------------------------------------------------------------------------------------  
@@ -122,11 +140,11 @@ instance ToPict Note where
 instance ToPict Clef where
   toPic c (x,y) = fill $ do rect (x,y) (dimensions clefAnno)
 
-instance ToPict Key where
+instance ToPict Main.Key where
   toPic k (x,y) = fill $ do rect (x,y) (dimensions keyAnno)
 
 instance ToPict Timing where
-  toPic t (x,y) = fill $ do rect (x,y) (dimensions timingAnno)
+  toPic t (x,y) = fill $ do (unsafeCoerce quadraticCurve) (20,20) (40,20) (30,40) -- fill $ do rect (x,y) (dimensions timingAnno)
 
 clefDy c = 15   -- BUG
 keyDy c = 15   -- BUG
@@ -170,7 +188,7 @@ sUpdAnnoDx    a = do s <- getSData ; setSData $ s {sXDisp = (sXDisp s) + (annoDx
 sUpdPos       p = do s <- getSData ; setSData $ s {sPos   = (sPos   s) + p}              
 -- Update dx following parallel notes of same duration.
 -- sUpdParNoteDx   = do s <- getSData ; setSData $ s {sXDisp = (sXDisp s) + (fst $ dimensions noteAnno)}   -- TODO: Create global constant for update amount, outside of this function
-Data RendState = RendState 
+data RendState = RendState 
   { sXDisp  :: Double
   , sClef   :: Clef
   , sKey    :: Key
@@ -192,38 +210,45 @@ noteRule1 ns = let n' = groupBy (\x y -> if dur x == dur y then True else False)
 
 drawCanvas m = do setSData $ RendState 0 (Clef NoneClef 0 0) (Main.Key 0 Major) (Timing 4 4 Nothing)    -- TODO: create monad function then map over it. Default state of clef is "none" clef
                   drawCanvas' m []
-
+-- CONTINUE
+-- BUG: Note rendering rule is wrong. Diff duration should be on same dx if not adjacent. Exception being end of notel?               
 drawCanvas' [] pics = return pics
 drawCanvas' ((pos, elm): mus) pics =
   do state <- getSData :: View Perch IO RendState
      r <- case elm of 
-           NoteElm ns -> do let xs    = [0..] * diffDurNoteOffsetDx
-                                nss   = noteRule1' ns           -- GrouP by duration, then sort by count of notes decsending: [[qn1,qn2],[en1]]
-                                nsss  = map noteRule2' nss       -- Group notes by adjacency
-                                -- nsss = [ [duration-grouping [adjacent grouping]]]
-                                nsss1 = map$map$map (zip (cycle [0, adjacentNoteOffsetDx])) $ nsss
-                                nsss2 = map (zip xs) $ nsss     -- Include Dx offset
-                                fUpd x (x', n) = (x+x', n)
-                                nsss3 = map (\(dx,ls) -> (map$map) (fUpd dx) ls) nsss2
-                                os    = concat $ concat $ map (\(_,ls) -> ls) nsss3
-                                max   = max $ map fst os
-                              in rs <- mapM notesToGraphics os
-                                 setSData $ state {sXDisp = (sXDisp state) + max}
-                                 sUpdAnnoDx (first os) -- BUG: What is the best dx offset?
-                                 return rs
+           NoteElm ns -> let xs    = map (diffDurNoteOffsetDx *) [0..] 
+                             nss   = noteRule1' ns           -- GrouP by duration, then sort by count of notes decsending: [[qn1,qn2],[en1]]
+                             nsss  = map (noteRule2' state) nss       -- Group notes by adjacency
+                             -- nsss = [ [duration-grouping [adjacent grouping]]]
+                             nsss1 = map2 (zip (cycle [0, adjacentNoteOffsetDx])) nsss
+                             nsss2 = zip xs nsss1     -- Include Dx offset
+                             fUpd x (x', n) = (x+x', n)
+                             nsss3 = map (\(dx,ls) -> map2 (fUpd dx) ls) nsss2
+                             os    = concat2 nsss3
+                             max   = maximum $ map fst os
+                         in do rs <- mapM notesToGraphics os
+                               setSData $ state {sXDisp = (sXDisp state) + max}
+                               sUpdAnnoDx noteAnno -- BUG: What is the best dx offset?
+                               return rs
            RestElm r  -> do return undefined
            ModElm  m  -> do mapM modifiersToGraphics m
      drawCanvas' mus (pics ++ r)
   where noteRule1' ns = sortByR (comparing length) $ 
-                        groupBy (\x y -> if dur x == dur y then True else False) n 
-        noteRule2' ns = groupBy (notesAdjacent state) $
-                        sortBy (comparing pitch) n     -- BUG: Consider when notes are on same line. Such as natural note and accidental. Then they must be further distanced, or maybe too much graphical overlap.
+                        groupBy (\x y -> if dur x == dur y then True else False) ns
+        noteRule2' :: RendState -> [Note] -> [[Note]]
+        noteRule2' st ns = groupBy (notesAdjacent (sKey st)) $
+                             sortBy (comparing pitch) (ns::[Note])     -- BUG: Consider when notes are on same line. Such as natural note and accidental. Then they must be further distanced, or maybe too much graphical overlap.
         sortByR f xs  = sortBy (flip f) xs
+        map3 f xsss = map (map (map f)) xsss
+        map2 f xss  = map (map f) xss
+        concat2 xss = concat $ concat xss
 
-                               
-notesAdjacent state n1 n2 = let fifths = keyfifths state
-                                mode   = keymode   state
-                            in if semiStepsToSteps n1 n2 <= 1 then True else False
+               
+notesAdjacent k n1 n2 = let fifths = keyfifths k
+                            mode   = keymode k
+                        in if (semiStepsToSteps (pitch n1) (pitch n2)) <= 1 
+                           then True
+                           else False
 
 notesToGraphics (dx,n) = do
   state <- getSData
@@ -429,52 +454,14 @@ stepsToSemiSteps steps pitch =
                            then negate n1
                            else n1
 
+
 -- Think about using a table similar to this one for step conversion.
 -- [(12,7),(11,6),(10,5),(9,5),(8,4),(7,4),(6,3),(5,3),(4,2),(3,1),(2,1),(1,0),(0,0),(-1,0),(-2,-1),(-3,-1),(-4,-2),(-5,-3),(-6,-3),(-7,-4),(-8,-4),(-9,-5),(-10,-5),(-11,-6),(-12,-7)]        
 
-
-{-
-(0 % 1,ModElm [ AnnoTime common,
-              , KeySym (Key {keyfifths = 0, keymode = Major}),
-              , TimingSym (1 % 1),
-              , ClefSym (Clef {clefsign = G, clefline = 2, clefoctalt = 0})])
-(0 % 1,NoteElm (Note {dur = 1 % 1, pitch = 48, mods = []}))
-(1 % 1,ModElm [ClefSym (Clef {clefsign = C, clefline = 3, clefoctalt = 0})])
-(1 % 1,NoteElm (Note {dur = 1 % 1, pitch = 48, mods = []}))
-(2 % 1,ModElm [ClefSym (Clef {clefsign = C, clefline = 4, clefoctalt = 0})])
-(2 % 1,NoteElm (Note {dur = 1 % 1, pitch = 48, mods = []}))
-(3 % 1,ModElm [ClefSym (Clef {clefsign = F, clefline = 4, clefoctalt = 0})])
-(3 % 1,NoteElm (Note {dur = 1 % 1, pitch = 48, mods = []}))
-(4 % 1,ModElm [ClefSym (Clef {clefsign = percussion, clefline = 0, clefoctalt = 0})])
-(4 % 1,NoteElm (Note {dur = 1 % 1, pitch = 48, mods = []}))
-(5 % 1,ModElm [ClefSym (Clef {clefsign = G, clefline = 2, clefoctalt = -1})])
-(5 % 1,NoteElm (Note {dur = 1 % 1, pitch = 48, mods = []}))
-(6 % 1,ModElm [ClefSym (Clef {clefsign = F, clefline = 4, clefoctalt = -1})])
-(6 % 1,NoteElm (Note {dur = 1 % 1, pitch = 48, mods = []}))
-(7 % 1,ModElm [ClefSym (Clef {clefsign = F, clefline = 3, clefoctalt = 0})])
-(7 % 1,NoteElm (Note {dur = 1 % 1, pitch = 48, mods = []}))
-(8 % 1,ModElm [ClefSym (Clef {clefsign = G, clefline = 1, clefoctalt = 0})])
-(8 % 1,NoteElm (Note {dur = 1 % 1, pitch = 48, mods = []}))
-(9 % 1,ModElm [ClefSym (Clef {clefsign = C, clefline = 5, clefoctalt = 0})])
-(9 % 1,NoteElm (Note {dur = 1 % 1, pitch = 48, mods = []}))
-(10 % 1,ModElm [ClefSym (Clef {clefsign = C, clefline = 2, clefoctalt = 0})])
-(10 % 1,NoteElm (Note {dur = 1 % 1, pitch = 48, mods = []}))
-(11 % 1,ModElm [ClefSym (Clef {clefsign = C, clefline = 1, clefoctalt = 0})])
-(11 % 1,NoteElm (Note {dur = 1 % 1, pitch = 48, mods = []}))
-(12 % 1,ModElm [ClefSym (Clef {clefsign = percussion, clefline = 0, clefoctalt = 0})])
-(12 % 1,NoteElm (Note {dur = 1 % 1, pitch = 48, mods = []}))
-(13 % 1,ModElm [ClefSym (Clef {clefsign = G, clefline = 2, clefoctalt = 1})])
-(13 % 1,NoteElm (Note {dur = 1 % 1, pitch = 48, mods = []}))
-(14 % 1,ModElm [ClefSym (Clef {clefsign = F, clefline = 4, clefoctalt = 1})])
-(14 % 1,NoteElm (Note {dur = 1 % 1, pitch = 48, mods = []}))
-(15 % 1,ModElm [ClefSym (Clef {clefsign = TAB, clefline = 5, clefoctalt = 0})])
-(15 % 1,NoteElm (Note {dur = 1 % 1, pitch = 48, mods = []}))
-(16 % 1,ModElm [ClefSym (Clef {clefsign = none, clefline = 0, clefoctalt = 0})])
-(16 % 1,NoteElm (Note {dur = 1 % 1, pitch = 48, mods = []}))
-(17 % 1,ModElm [ClefSym (Clef {clefsign = G, clefline = 2, clefoctalt = 0})])
-(17 % 1,NoteElm (Note {dur = 1 % 1, pitch = 48, mods = []}))
--}
-            
+quadraticCurve :: Point -> Point -> Point -> Shape ()
+quadraticCurve (x1,y1) (x2,y2) (cpx,cpy) = Shape $ \ctx -> do
+  jsMoveTo ctx x1 y1
+  jsQuadraticCurveTo ctx cpx cpy x2 y2
                            
 {-
 gClefPic = ctx.beginPath(); 
