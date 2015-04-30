@@ -75,7 +75,10 @@ data GlobalMod
 
 --------------------------------------------------
 -- Top level music type
--- TODO: Assume certain properties, or run function to verify in all cases? Such as sort parallel notes by duration. Then group, then sort by length of group                               
+-- TODO: Assume certain properties, or run function to verify in all cases? Such as sort parallel notes by duration. Then group, then sort by length of group
+-- TODO: So far NoteElm is sorted by duration (highest count of group first), then pitch (highest first?)
+-- TODO: This might be a pain in the ass. A presorter must be called during editing of music. If key changes, then the pitch sorting crap changes.
+-- TODO: Easier to have lined notes on right, unlined on left. Actually, easier way is not to sort, but to group touchign notes, then figure out who goes left/right.
 data MusElm = NoteElm  [Note]
              | RestElm Rest
              | ModElm  [GlobalMod] deriving (Show)
