@@ -32,6 +32,8 @@ foreign import ccall jsQuadraticCurveTo :: Ctx
 newtype Ctx = Ctx JSAny
             deriving (Pack, Unpack)
 newtype Shape a = Shape {unS :: Ctx -> IO a}
+(!>) = flip trace
+infixr 0 !>             
   
 ----------------------------------------------------------------------------------------------------                      
 -- Main code
@@ -185,7 +187,7 @@ instance Num Point where
 diffDurNoteOffsetDx = 2 * adjacentNoteOffsetDx
 adjacentNoteOffsetDx = fst $ dimensions noteAnno
 sUpdAnnoDx    a = do s <- getSData ; setSData $ s {sXDisp = (sXDisp s) + (annoDx a)}
-sUpdPos       p = do s <- getSData ; setSData $ s {sPos   = (sPos   s) + p}              
+-- sUpdPos       p = do s <- getSData ; setSData $ s {sPos   = (sPos   s) + p}              
 -- Update dx following parallel notes of same duration.
 -- sUpdParNoteDx   = do s <- getSData ; setSData $ s {sXDisp = (sXDisp s) + (fst $ dimensions noteAnno)}   -- TODO: Create global constant for update amount, outside of this function
 data RendState = RendState 
@@ -193,7 +195,7 @@ data RendState = RendState
   , sClef   :: Clef
   , sKey    :: Key
   , sTiming :: Timing
-  , sPos    :: Position  
+--  , sPos    :: Position  
   } deriving (Typeable)
 
 
@@ -216,33 +218,12 @@ drawCanvas' [] pics = return pics
 drawCanvas' ((pos, elm): mus) pics =
   do state <- getSData :: View Perch IO RendState
      r <- case elm of 
-           NoteElm ns -> let xs    = map (diffDurNoteOffsetDx *) [0..] 
-                             nss   = noteRule1' ns           -- GrouP by duration, then sort by count of notes decsending: [[qn1,qn2],[en1]]
-                             nsss  = map (noteRule2' state) nss       -- Group notes by adjacency
-                             -- nsss = [ [duration-grouping [adjacent grouping]]]
-                             nsss1 = map2 (zip (cycle [0, adjacentNoteOffsetDx])) nsss
-                             nsss2 = zip xs nsss1     -- Include Dx offset
-                             fUpd x (x', n) = (x+x', n)
-                             nsss3 = map (\(dx,ls) -> map2 (fUpd dx) ls) nsss2
-                             os    = concat2 nsss3
-                             max   = maximum $ map fst os
-                         in do rs <- mapM notesToGraphics os
-                               setSData $ state {sXDisp = (sXDisp state) + max}
-                               sUpdAnnoDx noteAnno -- BUG: What is the best dx offset?
-                               return rs
-           RestElm r  -> do return undefined
+           NoteElm ns -> do rs <- mapM notesToGraphics $ zip (cycle [0]) ns
+                            sUpdAnnoDx noteAnno
+                            return rs
+           RestElm r  -> do return [] -- BUG: Update Rest Element in drawCanvas
            ModElm  m  -> do mapM modifiersToGraphics m
      drawCanvas' mus (pics ++ r)
-  where noteRule1' ns = sortByR (comparing length) $ 
-                        groupBy (\x y -> if dur x == dur y then True else False) ns
-        noteRule2' :: RendState -> [Note] -> [[Note]]
-        noteRule2' st ns = groupBy (notesAdjacent (sKey st)) $
-                             sortBy (comparing pitch) (ns::[Note])     -- BUG: Consider when notes are on same line. Such as natural note and accidental. Then they must be further distanced, or maybe too much graphical overlap.
-        sortByR f xs  = sortBy (flip f) xs
-        map3 f xsss = map (map (map f)) xsss
-        map2 f xss  = map (map f) xss
-        concat2 xss = concat $ concat xss
-
                
 notesAdjacent k n1 n2 = let fifths = keyfifths k
                             mode   = keymode k
@@ -280,8 +261,7 @@ modifiersToGraphics e = do
                                sUpdAnnoDx timingAnno
                                return p
   return r
-        
-        
+                
         
 ----------------------------------------------------------------------------------------------------                      
 -- Examples
