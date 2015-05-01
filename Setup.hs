@@ -13,6 +13,7 @@ import Haste.HPlay.View hiding (map, head)
 import GHC.Float
 import Data.Ratio
 import Data.Typeable
+import Data.Maybe
 import Control.Monad.IO.Class
 import Haste.Foreign
 import Haste.Prim (toJSStr)
@@ -21,6 +22,7 @@ import Unsafe.Coerce
 import Debug.Trace
 import Data.List
 import Data.Ord (comparing)
+import Control.Monad  
 -- import Music -- BUG
 
 foreign import ccall jsMoveTo :: Ctx -> Double -> Double -> IO ()
@@ -52,13 +54,31 @@ main = do
   Just can <- liftIO $ getCanvasById "canvas" 
 
   pic <- drawCanvas musicTest
-  render can $ do
-    translate (20,20) $ do
+  let rndr = liftM snd pic
+      hglt = toHighlight pic
+  render can $ do 
+    translate (20,20) $ do 
     staffShape (0,0) 100
-    sequence_ pic
+    sequence_ rndr
+    sequence_ hglt
 
 -- jsHeader :: Perch
 jsHeader = script ! atr "type" "text/javascript" ! src "https://rawgit.com/nickgeoca/js_misc/master/misc.js" $ noHtml
+-- squareShape :: Shape ()
+rendHighlights c (dx1,dx2) = color c $ fill $ do rect (dx1, 0) (dx2, measureHeight gSGS)
+
+toHighlight dat
+  = let vs    = catMaybes $ liftM fst dat
+        eoM   = (fst $ last vs) + 20 -- End of measure   TODO: Get real end of measure value
+        boM   = (fst $ head vs) - 20 -- Begin of measure   TODO: Get real begin of measure value
+        ws    = (boM,False) : vs ++ [(eoM,False)]   -- [(dx, Note/Rest == True)]
+        avgS  = zipWith (\(dx1,_) (dx2,e) -> ((dx1 + dx2)/2, e)) ws (tail ws)   -- BUG: Need to grab state dx and append to end, so there is a boundry for last note. Or better, use measure end as boundry. Or if last elmeent is not note or rest, then that case doesn't matter.
+        pairS = zipWith (\(dx1,e) (dx2,_) -> ((dx1,dx2)    , e)) avgS (tail avgS)
+        zs    = liftM fst $ filter snd pairS
+        redC  = RGBA 255 0   0 0.3
+        yelC  = RGBA 255 255 0 0.3
+        hglt  = zipWith rendHighlights (cycle [redC,yelC]) zs
+    in hglt
 ----------------------------------------------------------------------------------------------------                      
 -- Old Graphics (still sort of used)
 ----------------------------------------------------------------------------------------------------  
@@ -146,7 +166,9 @@ instance ToPict Main.Key where
   toPic k (x,y) = fill $ do rect (x,y) (dimensions keyAnno)
 
 instance ToPict Timing where
-  toPic t (x,y) = fill $ do (unsafeCoerce quadraticCurve) (20,20) (40,20) (30,40) -- fill $ do rect (x,y) (dimensions timingAnno)
+  toPic t (x,y) = let x' = x + 10 -- (fst $ dimensions timingAnno) 
+                      y' = y + 10 -- (snd $ dimensions timingAnno) 
+                  in fill $ do (unsafeCoerce quadraticCurve) (x,y) (x',y') (x,y') -- fill $ do rect (x,y) (dimensions timingAnno)
 
 clefDy c = 15   -- BUG
 keyDy c = 15   -- BUG
@@ -206,24 +228,26 @@ noteRule1 ns = let n' = groupBy (\x y -> if dur x == dur y then True else False)
                                 else do return () 
                            do vss <- mapM (\ls -> do v <- mapM notesToGraphics ls; fm; return v) n'
                               sUpdAnnoDx noteAnno
-                              return $ concat vss
+                              return $ join vss
 -}                   
              
 
-drawCanvas m = do setSData $ RendState 0 (Clef NoneClef 0 0) (Main.Key 0 Major) (Timing 4 4 Nothing)    -- TODO: create monad function then map over it. Default state of clef is "none" clef
+drawCanvas m = do setSData $ RendState 0 (Clef NoneClef 0 0) (Main.Key 0 Major) (Timing 4 4 Nothing)   -- TODO: create monad function then map over it. Default state of clef is "none" clef
                   drawCanvas' m []
 -- CONTINUE
 -- BUG: Note rendering rule is wrong. Diff duration should be on same dx if not adjacent. Exception being end of notel?               
 drawCanvas' [] pics = return pics
 drawCanvas' ((pos, elm): mus) pics =
-  do state <- getSData :: View Perch IO RendState
+  do state <- (getSData :: View Perch IO RendState) 
      r <- case elm of 
            NoteElm ns -> do rs <- mapM notesToGraphics $ zip (cycle [0]) ns
                             sUpdAnnoDx noteAnno
-                            return rs
+                            return $  zip (Just (sXDisp state, True) :
+                                           (cycle [Nothing])) rs   -- Give the first value a true, ignore the rest
            RestElm r  -> do return [] -- BUG: Update Rest Element in drawCanvas
            ModElm  m  -> do mapM modifiersToGraphics m
      drawCanvas' mus (pics ++ r)
+
                
 notesAdjacent k n1 n2 = let fifths = keyfifths k
                             mode   = keymode k
@@ -260,7 +284,8 @@ modifiersToGraphics e = do
                          in do setSData $ state {sTiming = t}
                                sUpdAnnoDx timingAnno
                                return p
-  return r
+  return (Just (sXDisp state, False), r)
+        
                 
         
 ----------------------------------------------------------------------------------------------------                      
@@ -277,6 +302,7 @@ musicTest = [ (0 % 1,ModElm [ ClefSym (Clef {clefsign = GClef, clefline = 2, cle
             , (1 % 4,NoteElm [ (Note {dur = 1 % 4, pitch = 55, mods = []})])
             , (1 % 2,NoteElm [ (Note {dur = 1 % 4, pitch = 57, mods = []})])
             , (3 % 4,NoteElm [ (Note {dur = 1 % 4, pitch = 59, mods = []})])
+            , (1 % 1,ModElm  [ TimingSym (Timing 4 4 (Just TimeCommon))])
             , (1 % 1,NoteElm [ (Note {dur = 1 % 4, pitch = 48, mods = []})])
             , (5 % 4,NoteElm [ (Note {dur = 1 % 4, pitch = 50, mods = []})])
             , (3 % 2,NoteElm [ (Note {dur = 1 % 4, pitch = 52, mods = []})])
