@@ -51,10 +51,10 @@ main = do
   
   center <<< wbutton "render" "render" 
 
-  Just can <- liftIO $ getCanvasById "canvas" 
+  Just can <- liftIO $ getCanvasById "canvas"
 
   pic <- drawCanvas musicTest
-  let rndr = liftM snd pic
+  let rndr = liftM rendPic pic
       hglt = toHighlight pic
   render can $ do 
     translate (20,20) $ do 
@@ -67,8 +67,13 @@ jsHeader = script ! atr "type" "text/javascript" ! src "https://rawgit.com/nickg
 -- squareShape :: Shape ()
 rendHighlights c (dx1,dx2) = color c $ fill $ do rect (dx1, 0) (dx2, measureHeight gSGS)
 
+data ScoreRenderElm = ScoreRenderElm
+                   { hgltInfo :: Maybe (Double, Bool)  -- (dx, highlightable true)
+                   , rendPic :: Picture ()
+                     }
+
 toHighlight dat
-  = let vs    = catMaybes $ liftM fst dat
+  = let vs    = catMaybes $ liftM hgltInfo dat
         eoM   = (fst $ last vs) + 20 -- End of measure   TODO: Get real end of measure value
         boM   = (fst $ head vs) - 20 -- Begin of measure   TODO: Get real begin of measure value
         ws    = (boM,False) : vs ++ [(eoM,False)]   -- [(dx, Note/Rest == True)]
@@ -242,11 +247,11 @@ drawCanvas' ((pos, elm): mus) pics =
      r <- case elm of 
            NoteElm ns -> do rs <- mapM notesToGraphics $ zip (cycle [0]) ns
                             sUpdAnnoDx noteAnno
-                            return $  zip (Just (sXDisp state, True) :
-                                           (cycle [Nothing])) rs   -- Give the first value a true, ignore the rest
+                            return $ zipWith ScoreRenderElm (firstNoteOnly state) rs  
+                              where firstNoteOnly state = (Just (sXDisp state, True)) : cycle [Nothing]  -- Give the first value a true, ignore the rest
            RestElm r  -> do return [] -- BUG: Update Rest Element in drawCanvas
            ModElm  m  -> do mapM modifiersToGraphics m
-     drawCanvas' mus (pics ++ r)
+     drawCanvas' mus (pics ++ r)   -- TODO: Inefficient list concat method?
 
                
 notesAdjacent k n1 n2 = let fifths = keyfifths k
@@ -284,7 +289,7 @@ modifiersToGraphics e = do
                          in do setSData $ state {sTiming = t}
                                sUpdAnnoDx timingAnno
                                return p
-  return (Just (sXDisp state, False), r)
+  return $ ScoreRenderElm (Just (sXDisp state, False)) r
         
                 
         
