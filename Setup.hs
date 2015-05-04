@@ -37,41 +37,42 @@ newtype Shape a = Shape {unS :: Ctx -> IO a}
 (!>) = flip trace
 infixr 0 !>             
   
-----------------------------------------------------------------------------------------------------                      
--- Main code
-----------------------------------------------------------------------------------------------------  
-main = do
-  addHeader jsHeader
-  runBody $ do
-  wraw $ do center $ canvas ! id "canvas" 
-                     ! Haste.Perch.style "border: 1px solid black;" 
-                     ! atr "width" "600" 
-                     ! height "400"
-                     $ noHtml
-  
-  center <<< wbutton "render" "render" 
-
-  Just can <- liftIO $ getCanvasById "canvas"
-
-  pic <- drawCanvas musicTest
-  let rndr = liftM rendPic pic
-      hglt = toHighlight pic
-  render can $ do 
-    translate (20,20) $ do 
-    staffShape (0,0) 100
-    sequence_ rndr
-    sequence_ hglt
-
--- jsHeader :: Perch
-jsHeader = script ! atr "type" "text/javascript" ! src "https://rawgit.com/nickgeoca/js_misc/master/misc.js" $ noHtml
--- squareShape :: Shape ()
-rendHighlights c (dx1,dx2) = color c $ fill $ do rect (dx1, 0) (dx2, measureHeight gSGS)
-
 data ScoreRenderElm = ScoreRenderElm
                    { hgltInfo :: Maybe (Double, Bool)  -- (dx, highlightable true)
                    , rendPic :: Picture ()
                      }
+----------------------------------------------------------------------------------------------------                      
+-- Main code
+----------------------------------------------------------------------------------------------------
+main = do addHeader jsHeader
+          runBody mouse
+          runBody scoreCanvas
 
+jsHeader :: Perch
+jsHeader = script ! atr "type" "text/javascript" ! src "https://rawgit.com/nickgeoca/js_misc/master/misc.js" $ noHtml
+
+scoreCanvas :: Widget ()
+scoreCanvas =
+  do wraw $ do center $ canvas ! id "canvas"
+                               ! Haste.Perch.style "border: 1px solid black;"
+                               ! atr "width" "600"
+                               ! height "400"
+                               $ noHtml
+     center <<< wbutton "render" "render"
+     Just canv <- liftIO $ getCanvasById "canvas" 
+     pic <- drawCanvas musicTest                     -- drawCanvas :: Music -> Widget [ScoreRenderElm]   
+     let rndr = liftM rendPic pic
+         hglt = toHighlight pic
+     render canv $ do 
+       translate (20,20) $ do 
+         staffShape (0,0) 100
+         sequence_ rndr
+         sequence_ hglt
+                   
+rendHighlights :: Color -> Point -> Picture ()
+rendHighlights c (dx1,dx2) = color c $ fill $ do rect (dx1, 0) (dx2, measureHeight gSGS)
+                             
+toHighlight :: [ScoreRenderElm] -> [Picture ()]
 toHighlight dat
   = let vs    = catMaybes $ liftM hgltInfo dat
         eoM   = (fst $ last vs) + 20 -- End of measure   TODO: Get real end of measure value
@@ -84,6 +85,24 @@ toHighlight dat
         yelC  = RGBA 255 255 0 0.3
         hglt  = zipWith rendHighlights (cycle [redC,yelC]) zs
     in hglt
+
+mouse :: Widget ()
+mouse= do
+    wraw (div ! Haste.HPlay.View.style "height:100px;background-color:lightgreen;position:relative" $ h1 "Mouse events here")
+                            `fire` OnMouseOut
+                            `fire` OnMouseOver
+                            `fire` OnMouseDown
+                            `fire` OnMouseMove
+                            `fire` OnMouseUp
+                            `fire` OnClick
+                            `fire` OnDblClick
+                            `fire` OnKeyPress
+                            `fire` OnKeyDown
+                            `fire` OnKeyUp
+    evdata <- getEventData
+    wraw $ p << ( (evName evdata) ++" "++ show (evData evdata))
+    
+       
 ----------------------------------------------------------------------------------------------------                      
 -- Old Graphics (still sort of used)
 ----------------------------------------------------------------------------------------------------  
@@ -236,14 +255,15 @@ noteRule1 ns = let n' = groupBy (\x y -> if dur x == dur y then True else False)
                               return $ join vss
 -}                   
              
-
+drawCanvas :: Music -> Widget [ScoreRenderElm]   
 drawCanvas m = do setSData $ RendState 0 (Clef NoneClef 0 0) (Main.Key 0 Major) (Timing 4 4 Nothing)   -- TODO: create monad function then map over it. Default state of clef is "none" clef
                   drawCanvas' m []
--- CONTINUE
--- BUG: Note rendering rule is wrong. Diff duration should be on same dx if not adjacent. Exception being end of notel?               
+
+-- BUG: Note rendering rule is wrong. Diff duration should be on same dx if not adjacent. Exception being end of notel?
+drawCanvas' :: Music -> [ScoreRenderElm] -> Widget [ScoreRenderElm]                  
 drawCanvas' [] pics = return pics
 drawCanvas' ((pos, elm): mus) pics =
-  do state <- (getSData :: View Perch IO RendState) 
+  do state <- (getSData :: Widget RendState) 
      r <- case elm of 
            NoteElm ns -> do rs <- mapM notesToGraphics $ zip (cycle [0]) ns
                             sUpdAnnoDx noteAnno
