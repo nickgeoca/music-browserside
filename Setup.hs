@@ -45,34 +45,49 @@ data ScoreRenderElm = ScoreRenderElm
 -- Main code
 ----------------------------------------------------------------------------------------------------
 main = do addHeader jsHeader
-          runBody mouse
-          runBody scoreCanvas
+          runBody $ scoreCanvas musicTest
 
 jsHeader :: Perch
 jsHeader = script ! atr "type" "text/javascript" ! src "https://rawgit.com/nickgeoca/js_misc/master/misc.js" $ noHtml
 
-scoreCanvas :: Widget ()
-scoreCanvas =
-  do wraw $ do center $ canvas ! id "canvas"
-                               ! Haste.Perch.style "border: 1px solid black;"
-                               ! atr "width" "600"
-                               ! height "400"
-                               $ noHtml
-     center <<< wbutton "render" "render"
+scoreCanvas :: Music -> Widget ()
+scoreCanvas score =
+  do wraw (do canvas ! id "canvas"
+                       ! Haste.Perch.style "border: 1px solid black;"
+                       ! atr "width" "600"
+                       ! height "400"
+                       $ noHtml) `fire` OnClick
+     -- center <<< wbutton "render" "render"                       
      Just canv <- liftIO $ getCanvasById "canvas" 
-     pic <- drawCanvas musicTest                     -- drawCanvas :: Music -> Widget [ScoreRenderElm]   
-     let rndr = liftM rendPic pic
-         hglt = toHighlight pic
+     rdat <- drawCanvas score                     -- drawCanvas :: Music -> Widget [ScoreRenderElm]   
+     let rndr    = liftM rendPic rdat
+         hglt    = toHighlight rdat
+         offsetX = 30
+         offsetY = 30
      render canv $ do 
-       translate (20,20) $ do 
+       translate (offsetX, offsetY) $ do 
          staffShape (0,0) 100
          sequence_ rndr
-         sequence_ hglt
+         -- sequence_ hglt
+     Just (x,y) <- liftM clickCoor getEventData   -- BUG: Handle nothing case
+     let xAdj = x - (round offsetX)
+     renderOnTop canv $ do
+               translate (offsetX, offsetY) $ 
+                 case find (pred xAdj) hglt of       -- TODO: Make maybe cleaner here
+                  Just (_,hgltBox) -> do hgltBox
+                  _                -> do return ()
+     wraw $ p << ((show x) ++" "++ (show y))
+     return ()
+       where pred x ((x1,x2),_) = (fromIntegral x) > x1 && (fromIntegral x) < x2
+             clickCoor :: EventData -> Maybe (Int, Int)
+             clickCoor d = case evData d of
+                            Click _ (x,y) -> Just (x,y)
+                            _             -> Nothing
                    
-rendHighlights :: Color -> Point -> Picture ()
-rendHighlights c (dx1,dx2) = color c $ fill $ do rect (dx1, 0) (dx2, measureHeight gSGS)
+rendHighlights :: Color -> XBoundary -> Picture ()    
+rendHighlights c (dx1,dx2) = color c $ fill $ do rect (dx1, 0) (dx2, measureHeight gSGS)  
                              
-toHighlight :: [ScoreRenderElm] -> [Picture ()]
+toHighlight :: [ScoreRenderElm] -> [(XBoundary, Picture ())]
 toHighlight dat
   = let vs    = catMaybes $ liftM hgltInfo dat
         eoM   = (fst $ last vs) + 20 -- End of measure   TODO: Get real end of measure value
@@ -84,25 +99,9 @@ toHighlight dat
         redC  = RGBA 255 0   0 0.3
         yelC  = RGBA 255 255 0 0.3
         hglt  = zipWith rendHighlights (cycle [redC,yelC]) zs
-    in hglt
+    in zip zs hglt
 
-mouse :: Widget ()
-mouse= do
-    wraw (div ! Haste.HPlay.View.style "height:100px;background-color:lightgreen;position:relative" $ h1 "Mouse events here")
-                            `fire` OnMouseOut
-                            `fire` OnMouseOver
-                            `fire` OnMouseDown
-                            `fire` OnMouseMove
-                            `fire` OnMouseUp
-                            `fire` OnClick
-                            `fire` OnDblClick
-                            `fire` OnKeyPress
-                            `fire` OnKeyDown
-                            `fire` OnKeyUp
-    evdata <- getEventData
-    wraw $ p << ( (evName evdata) ++" "++ show (evData evdata))
-    
-       
+type XBoundary = (Double, Double)       
 ----------------------------------------------------------------------------------------------------                      
 -- Old Graphics (still sort of used)
 ----------------------------------------------------------------------------------------------------  
@@ -192,7 +191,7 @@ instance ToPict Main.Key where
 instance ToPict Timing where
   toPic t (x,y) = let x' = x + 10 -- (fst $ dimensions timingAnno) 
                       y' = y + 10 -- (snd $ dimensions timingAnno) 
-                  in fill $ do (unsafeCoerce quadraticCurve) (x,y) (x',y') (x,y') -- fill $ do rect (x,y) (dimensions timingAnno)
+                  in fill $ do rect (x/5,y/5) (dimensions keyAnno) -- fill $ do (unsafeCoerce quadraticCurve) (x,y) (x',y') (x,y') -- fill $ do rect (x,y) (dimensions timingAnno)
 
 clefDy c = 15   -- BUG
 keyDy c = 15   -- BUG
