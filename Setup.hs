@@ -22,41 +22,42 @@ import Unsafe.Coerce
 import Debug.Trace
 import Data.List
 import Data.Ord (comparing)
-import Control.Monad  
+import Control.Monad
+import Data.Monoid  
 -- import Music -- BUG
 
 foreign import ccall jsMoveTo :: Ctx -> Double -> Double -> IO ()
-foreign import ccall jsQuadraticCurveTo :: Ctx
-                           -> Double -> Double
-                           -> Double -> Double
-                           -> IO ()
-
-newtype Ctx = Ctx JSAny
+foreign import ccall jsQuadraticCurveTo :: Ctx -> Double -> Double -> Double -> Double -> IO ()
+foreign import ccall jsMidiLoadPlugin :: Midi -> IO ()
+foreign import ccall jsMidiNoteOn :: Midi -> Int -> Int -> Int -> Float -> IO ()
+foreign import ccall jsMidiNoteOff :: Midi -> Int -> Int -> Float -> IO ()
+newtype Ctx = Ctx JSAny                   -- TODO: Should be in library
             deriving (Pack, Unpack)
-newtype Shape a = Shape {unS :: Ctx -> IO a}
+newtype Shape a = Shape {unS :: Ctx -> IO a} -- TODO: Should be in library
 (!>) = flip trace
 infixr 0 !>             
-  
+newtype Midi = Midi JSAny
+             deriving (Pack, Unpack) 
+newtype MidiM a = MidiM {unM :: Midi -> IO a}
 data ScoreRenderElm = ScoreRenderElm
                    { hgltInfo :: Maybe (Double, Bool)  -- (dx, highlightable true)
                    , rendPic :: Picture ()
                      }
+--  $ ==> <$> <*> **> <** ==> <|> ==> <<< -> ++> <++ ==> <<
 ----------------------------------------------------------------------------------------------------                      
 -- Main code
 ----------------------------------------------------------------------------------------------------
 main = do addHeader jsHeader
           runBody $ scoreCanvas musicTest
 
-jsHeader :: Perch
-jsHeader = script ! atr "type" "text/javascript" ! src "https://rawgit.com/nickgeoca/js_misc/master/misc.js" $ noHtml
-
+         
 scoreCanvas :: Music -> Widget ()
 scoreCanvas score =
   do wraw (do canvas ! id "canvas"
-                       ! Haste.Perch.style "border: 1px solid black;"
-                       ! atr "width" "600"
-                       ! height "400"
-                       $ noHtml) `fire` OnClick
+                     ! Haste.Perch.style "border: 1px solid black;"
+                     ! atr "width" "600"
+                     ! height "400"
+                     $ noHtml) `fire` OnClick
      -- center <<< wbutton "render" "render"                       
      Just canv <- liftIO $ getCanvasById "canvas" 
      rdat <- drawCanvas score                     -- drawCanvas :: Music -> Widget [ScoreRenderElm]   
@@ -72,18 +73,18 @@ scoreCanvas score =
      Just (x,y) <- liftM clickCoor getEventData   -- BUG: Handle nothing case
      let xAdj = x - (round offsetX)
      renderOnTop canv $ do
-               translate (offsetX, offsetY) $ 
+               translate (offsetX, offsetY) $        -- TODO: Use find on different data structure that is more efficient.
                  case find (pred xAdj) hglt of       -- TODO: Make maybe cleaner here
                   Just (_,hgltBox) -> do hgltBox
                   _                -> do return ()
      wraw $ p << ((show x) ++" "++ (show y))
      return ()
-       where pred x ((x1,x2),_) = (fromIntegral x) > x1 && (fromIntegral x) < x2
+       where pred x ((x1,x2),_) = (fromIntegral x) >= x1 && (fromIntegral x) < x2
              clickCoor :: EventData -> Maybe (Int, Int)
              clickCoor d = case evData d of
                             Click _ (x,y) -> Just (x,y)
                             _             -> Nothing
-                   
+
 rendHighlights :: Color -> XBoundary -> Picture ()    
 rendHighlights c (dx1,dx2) = color c $ fill $ do rect (dx1, 0) (dx2, measureHeight gSGS)  
                              
@@ -101,7 +102,9 @@ toHighlight dat
         hglt  = zipWith rendHighlights (cycle [redC,yelC]) zs
     in zip zs hglt
 
-type XBoundary = (Double, Double)       
+type XBoundary = (Double, Double)
+
+
 ----------------------------------------------------------------------------------------------------                      
 -- Old Graphics (still sort of used)
 ----------------------------------------------------------------------------------------------------  
@@ -338,6 +341,56 @@ musicTest = [ (0 % 1,ModElm [ ClefSym (Clef {clefsign = GClef, clefline = 2, cle
 -- Notes, ideas, etc. Might be out of date
 ----------------------------------------------------------------------------------------------------
 
+----------------------------------------------------------------------------------------------------                      
+-- Misc
+----------------------------------------------------------------------------------------------------
+instance Functor MidiM where
+  fmap f m = MidiM $ \midi ->
+                      unM m midi >>= return . f
+{-  
+instance Applicative MidiM where
+  pure a = MidiM $ \_ -> return a
+  mfab <*> ma = MidiM $ \midi -> do
+    fab <- unM mfab midi
+    a   <- unM sa   midi
+    return (fab a)
+-}
+instance Monad MidiM where
+  return x = MidiM $ \_ -> return x
+  MidiM m >>= f = MidiM $ \midi -> do
+    x <- m midi
+    unM (f x) midi
+    
+----------------------------------------------------------------------------------------------------                      
+-- Javascript API
+----------------------------------------------------------------------------------------------------
+
+midiLoadPlugin :: MidiM ()
+midiLoadPlugin
+  = MidiM $ \midi -> do jsMidiLoadPlugin midi
+
+midiNoteOn :: Int -> Int -> Int -> Float -> MidiM ()
+midiNoteOn  channel note velocity delay
+  = MidiM $ \midi -> do jsMidiNoteOn midi channel note velocity delay
+
+midiNoteOff :: Int -> Int -> Float -> MidiM ()
+midiNoteOff channel note delay
+  = MidiM $ \midi -> do jsMidiNoteOff midi channel note delay
+        
+quadraticCurve :: Point -> Point -> Point -> Shape ()
+quadraticCurve (x1,y1) (x2,y2) (cpx,cpy) = Shape $ \ctx -> do
+  jsMoveTo ctx x1 y1
+  jsQuadraticCurveTo ctx cpx cpy x2 y2
+
+-- Javascript headers
+jsHeader :: Perch
+jsHeader = (   script ! atr "type" "text/javascript" ! src "https://rawgit.com/nickgeoca/js_misc/master/misc.js" $ noHtml)              -- API to plug into
+           <> (script ! atr "type" "text/javascript" ! src "https://rawgit.com/mudcube/MIDI.js/master/js/midi/audioDetect.js" $ noHtml)
+           <> (script ! atr "type" "text/javascript" ! src "https://rawgit.com/mudcube/MIDI.js/master/js/midi/gm.js" $ noHtml)
+           <> (script ! atr "type" "text/javascript" ! src "https://rawgit.com/mudcube/MIDI.js/master/js/midi/loader.js" $ noHtml)
+           <> (script ! atr "type" "text/javascript" ! src "https://rawgit.com/mudcube/MIDI.js/master/js/midi/plugin.audiotag.js" $ noHtml)
+           <> (script ! atr "type" "text/javascript" ! src "https://rawgit.com/mudcube/MIDI.js/master/js/midi/plugin.webaudio.js" $ noHtml)
+           <> (script ! atr "type" "text/javascript" ! src "https://rawgit.com/mudcube/MIDI.js/master/js/midi/plugin.webmidi.js" $ noHtml)  
 
 ----------------------------------------------------------------------------------------------------                      
 -- Music Type
@@ -487,11 +540,6 @@ stepsToSemiSteps steps pitch =
 
 -- Think about using a table similar to this one for step conversion.
 -- [(12,7),(11,6),(10,5),(9,5),(8,4),(7,4),(6,3),(5,3),(4,2),(3,1),(2,1),(1,0),(0,0),(-1,0),(-2,-1),(-3,-1),(-4,-2),(-5,-3),(-6,-3),(-7,-4),(-8,-4),(-9,-5),(-10,-5),(-11,-6),(-12,-7)]        
-
-quadraticCurve :: Point -> Point -> Point -> Shape ()
-quadraticCurve (x1,y1) (x2,y2) (cpx,cpy) = Shape $ \ctx -> do
-  jsMoveTo ctx x1 y1
-  jsQuadraticCurveTo ctx cpx cpy x2 y2
                            
 {-
 gClefPic = ctx.beginPath(); 
