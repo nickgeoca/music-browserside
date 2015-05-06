@@ -45,9 +45,10 @@ data ScoreRenderElm = ScoreRenderElm
 -- Main code
 ----------------------------------------------------------------------------------------------------
 main = do addHeader jsHeader
-          runBody $ scoreCanvas musicTest
-          midiLoadPlugin
-          midiNoteOn 0 50 127 0
+          runBody $ do
+            scoreCanvas musicTest
+            return $ midiLoadPlugin
+            return $ midiNoteOn 0 50 127 0
           -- midiNoteOff 0 50 (0.5)
          
 scoreCanvas :: Music -> Widget ()
@@ -57,7 +58,7 @@ scoreCanvas score =
                      ! atr "width" "600"
                      ! height "400"
                      $ noHtml) `fire` OnClick
-     -- center <<< wbutton "render" "render"                       
+     center <<< wbutton "render" "render"                       
      Just canv <- liftIO $ getCanvasById "canvas" 
      rdat <- drawCanvas score                     -- drawCanvas :: Music -> Widget [ScoreRenderElm]   
      let rndr    = liftM rendPic rdat
