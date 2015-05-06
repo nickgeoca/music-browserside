@@ -28,17 +28,14 @@ import Data.Monoid
 
 foreign import ccall jsMoveTo :: Ctx -> Double -> Double -> IO ()
 foreign import ccall jsQuadraticCurveTo :: Ctx -> Double -> Double -> Double -> Double -> IO ()
-foreign import ccall jsMidiLoadPlugin :: Midi -> IO ()
-foreign import ccall jsMidiNoteOn :: Midi -> Int -> Int -> Int -> Float -> IO ()
-foreign import ccall jsMidiNoteOff :: Midi -> Int -> Int -> Float -> IO ()
+foreign import ccall jsMidiLoadPlugin :: IO ()
+foreign import ccall jsMidiNoteOn :: Int -> Int -> Int -> Float -> IO ()
+foreign import ccall jsMidiNoteOff :: Int -> Int -> Float -> IO ()
 newtype Ctx = Ctx JSAny                   -- TODO: Should be in library
             deriving (Pack, Unpack)
 newtype Shape a = Shape {unS :: Ctx -> IO a} -- TODO: Should be in library
 (!>) = flip trace
 infixr 0 !>             
-newtype Midi = Midi JSAny
-             deriving (Pack, Unpack) 
-newtype MidiM a = MidiM {unM :: Midi -> IO a}
 data ScoreRenderElm = ScoreRenderElm
                    { hgltInfo :: Maybe (Double, Bool)  -- (dx, highlightable true)
                    , rendPic :: Picture ()
@@ -49,7 +46,9 @@ data ScoreRenderElm = ScoreRenderElm
 ----------------------------------------------------------------------------------------------------
 main = do addHeader jsHeader
           runBody $ scoreCanvas musicTest
-
+          midiLoadPlugin
+          midiNoteOn 0 50 127 0
+          -- midiNoteOff 0 50 (0.5)
          
 scoreCanvas :: Music -> Widget ()
 scoreCanvas score =
@@ -343,39 +342,23 @@ musicTest = [ (0 % 1,ModElm [ ClefSym (Clef {clefsign = GClef, clefline = 2, cle
 
 ----------------------------------------------------------------------------------------------------                      
 -- Misc
-----------------------------------------------------------------------------------------------------
-instance Functor MidiM where
-  fmap f m = MidiM $ \midi ->
-                      unM m midi >>= return . f
-{-  
-instance Applicative MidiM where
-  pure a = MidiM $ \_ -> return a
-  mfab <*> ma = MidiM $ \midi -> do
-    fab <- unM mfab midi
-    a   <- unM sa   midi
-    return (fab a)
--}
-instance Monad MidiM where
-  return x = MidiM $ \_ -> return x
-  MidiM m >>= f = MidiM $ \midi -> do
-    x <- m midi
-    unM (f x) midi
-    
+----------------------------------------------------------------------------------------------------                      
+
 ----------------------------------------------------------------------------------------------------                      
 -- Javascript API
 ----------------------------------------------------------------------------------------------------
 
-midiLoadPlugin :: MidiM ()
+midiLoadPlugin :: IO ()
 midiLoadPlugin
-  = MidiM $ \midi -> do jsMidiLoadPlugin midi
+  = do jsMidiLoadPlugin
 
-midiNoteOn :: Int -> Int -> Int -> Float -> MidiM ()
+midiNoteOn :: Int -> Int -> Int -> Float -> IO ()
 midiNoteOn  channel note velocity delay
-  = MidiM $ \midi -> do jsMidiNoteOn midi channel note velocity delay
+  = do jsMidiNoteOn channel note velocity delay
 
-midiNoteOff :: Int -> Int -> Float -> MidiM ()
+midiNoteOff :: Int -> Int -> Float -> IO ()
 midiNoteOff channel note delay
-  = MidiM $ \midi -> do jsMidiNoteOff midi channel note delay
+  = do jsMidiNoteOff channel note delay
         
 quadraticCurve :: Point -> Point -> Point -> Shape ()
 quadraticCurve (x1,y1) (x2,y2) (cpx,cpy) = Shape $ \ctx -> do
@@ -384,13 +367,22 @@ quadraticCurve (x1,y1) (x2,y2) (cpx,cpy) = Shape $ \ctx -> do
 
 -- Javascript headers
 jsHeader :: Perch
-jsHeader = (   script ! atr "type" "text/javascript" ! src "https://rawgit.com/nickgeoca/js_misc/master/misc.js" $ noHtml)              -- API to plug into
+jsHeader = (   script ! atr "type" "text/javascript" ! src "https://rawgit.com/mudcube/MIDI.js/master/inc/shim/Base64.js" $ noHtml)
+           <> (script ! atr "type" "text/javascript" ! src "https://rawgit.com/mudcube/MIDI.js/master/inc/shim/Base64binary.js" $ noHtml)
+           <> (script ! atr "type" "text/javascript" ! src "https://rawgit.com/mudcube/MIDI.js/master/inc/shim/WebAudioAPI.js" $ noHtml)           
+           --
            <> (script ! atr "type" "text/javascript" ! src "https://rawgit.com/mudcube/MIDI.js/master/js/midi/audioDetect.js" $ noHtml)
            <> (script ! atr "type" "text/javascript" ! src "https://rawgit.com/mudcube/MIDI.js/master/js/midi/gm.js" $ noHtml)
            <> (script ! atr "type" "text/javascript" ! src "https://rawgit.com/mudcube/MIDI.js/master/js/midi/loader.js" $ noHtml)
            <> (script ! atr "type" "text/javascript" ! src "https://rawgit.com/mudcube/MIDI.js/master/js/midi/plugin.audiotag.js" $ noHtml)
            <> (script ! atr "type" "text/javascript" ! src "https://rawgit.com/mudcube/MIDI.js/master/js/midi/plugin.webaudio.js" $ noHtml)
-           <> (script ! atr "type" "text/javascript" ! src "https://rawgit.com/mudcube/MIDI.js/master/js/midi/plugin.webmidi.js" $ noHtml)  
+           <> (script ! atr "type" "text/javascript" ! src "https://rawgit.com/mudcube/MIDI.js/master/js/midi/plugin.webmidi.js" $ noHtml)
+           <> (script ! atr "type" "text/javascript" ! src "https://rawgit.com/mudcube/MIDI.js/master/js/midi/player.js" $ noHtml)           
+           --
+           <> (script ! atr "type" "text/javascript" ! src "https://rawgit.com/mudcube/MIDI.js/master/js/util/dom_request_xhr.js" $ noHtml)
+           <> (script ! atr "type" "text/javascript" ! src "https://rawgit.com/mudcube/MIDI.js/master/js/util/dom_request_script.js" $ noHtml)                                 
+           --
+           <> (script ! atr "type" "text/javascript" ! src "https://rawgit.com/nickgeoca/js_misc/master/misc.js" $ noHtml)              -- API to plug into
 
 ----------------------------------------------------------------------------------------------------                      
 -- Music Type
