@@ -31,11 +31,25 @@ foreign import ccall jsQuadraticCurveTo :: Ctx -> Double -> Double -> Double -> 
 foreign import ccall jsMidiLoadPlugin :: IO ()
 foreign import ccall jsMidiNoteOn :: Int -> Int -> Int -> Float -> IO ()
 foreign import ccall jsMidiNoteOff :: Int -> Int -> Float -> IO ()
+
 newtype Ctx = Ctx JSAny                   -- TODO: Should be in library
             deriving (Pack, Unpack)
+
 newtype Shape a = Shape {unS :: Ctx -> IO a} -- TODO: Should be in library
+
 (!>) = flip trace
 infixr 0 !>             
+
+data MidiNote = MidiNote
+                { mNote :: Int
+                , mDur  :: Float
+                , mVol  :: Int
+                }
+midiPlayNote :: Int -> MidiNote -> IO ()
+midiPlayNote chnl (MidiNote note dur vol)
+  = do midiNoteOn  chnl note vol 0
+       midiNoteOff chnl note dur
+                                           
 data ScoreRenderElm = ScoreRenderElm
                    { hgltInfo :: Maybe (Double, Bool)  -- (dx, highlightable true)
                    , rendPic :: Picture ()
@@ -46,10 +60,10 @@ data ScoreRenderElm = ScoreRenderElm
 ----------------------------------------------------------------------------------------------------
 main = do addHeader jsHeader
           runBody $ do
+            setTimeout 0 midiLoadPlugin
+            setTimeout 1000 (midiNoteOn 0 50 127 0)
+            -- center <<< wbutton "render" "render"                      
             scoreCanvas musicTest
-            return $ midiLoadPlugin
-            return $ midiNoteOn 0 50 127 0
-          -- midiNoteOff 0 50 (0.5)
          
 scoreCanvas :: Music -> Widget ()
 scoreCanvas score =
@@ -58,7 +72,6 @@ scoreCanvas score =
                      ! atr "width" "600"
                      ! height "400"
                      $ noHtml) `fire` OnClick
-     center <<< wbutton "render" "render"                       
      Just canv <- liftIO $ getCanvasById "canvas" 
      rdat <- drawCanvas score                     -- drawCanvas :: Music -> Widget [ScoreRenderElm]   
      let rndr    = liftM rendPic rdat
