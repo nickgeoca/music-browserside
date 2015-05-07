@@ -40,11 +40,30 @@ newtype Shape a = Shape {unS :: Ctx -> IO a} -- TODO: Should be in library
 (!>) = flip trace
 infixr 0 !>             
 
-data MidiNote = MidiNote
-                { mNote :: Int
-                , mDur  :: Float
-                , mVol  :: Int
-                }
+data MidiNote = MidiNote {
+  mNote :: Int,
+  mDur  :: Float,
+  }
+
+data MidiLocalContext = MidiLocalContext {
+
+  }
+data MidiContext = MidiContext {
+  mVol  :: Int,  -- Volume (0-127)
+  mBPM  :: Int   -- BPM
+  }
+
+data BinaryTree a = BinaryTree {
+  bL  :: Maybe BinaryTree,
+  bR  :: Maybe BinaryTree,
+  bNd :: a
+  }
+                     
+data GraphicMusicElm = GMContextElm MidiContext BinaryTree |
+                       GMNoteElm 
+                       
+data GraphicMusic    = [GraphicMusicElm]
+
 midiPlayNote :: Int -> MidiNote -> IO ()
 midiPlayNote chnl (MidiNote note dur vol)
   = do midiNoteOn  chnl note vol 0
@@ -64,6 +83,7 @@ main = do addHeader jsHeader
             setTimeout 0 midiLoadPlugin
             setTimeout 1000 (midiNoteOn 0 50 127 0)
             scoreCanvas musicTest
+            -- return $ midiPlayNote 0 $ MidiNote 50 127 .25
          
 scoreCanvas :: Music -> Widget ()
 scoreCanvas score =
@@ -576,4 +596,15 @@ ctx.beginPath();
 ctx.moveTo(147,444); 
 [(120,456,101,480),(83,504,84,536),(86,567,107,588),(114,597,126,605),(116,593,107,581),(95,560,99,537),(105,509,132,491),(143,482,164,476)] 
 ctx.fill();       
+-}
+
+
+{-
+E: Midi Playing note
+ * E1: Refused to get unsafe header "Content-Length-Raw"
+       dom_request_xhr.js:95
+       var rawBytes = parseInt(xhr.getResponseHeader('Content-Length-Raw'));
+ * E2: Uncaught TypeError: undefined is not a function
+       misc.js:16
+       MIDI.noteOn(channel, note, velocity, delay);
 -}
