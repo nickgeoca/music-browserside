@@ -60,9 +60,9 @@ data ScoreRenderElm = ScoreRenderElm
 ----------------------------------------------------------------------------------------------------
 main = do addHeader jsHeader
           runBody $ do
+            center <<< wbutton "render" "render"                      
             setTimeout 0 midiLoadPlugin
             setTimeout 1000 (midiNoteOn 0 50 127 0)
-            -- center <<< wbutton "render" "render"                      
             scoreCanvas musicTest
          
 scoreCanvas :: Music -> Widget ()
