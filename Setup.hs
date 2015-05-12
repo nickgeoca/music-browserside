@@ -46,29 +46,37 @@ data MidiNote = MidiNote {
   }
 
 data MidiLocalContext = MidiLocalContext {
-
+  mNil :: ()
   }
 data MidiContext = MidiContext {
   mVol  :: Int,  -- Volume (0-127)
   mBPM  :: Int   -- BPM
   }
 
-data BinaryTree a = BinaryTree {
-  bL  :: Maybe BinaryTree,
-  bR  :: Maybe BinaryTree,
-  bNd :: a
+
+data BinaryTree a = Empty | Branch a (BinaryTree a) (BinaryTree a)
+bL  Empty = Nothing
+bL  (Branch _ l _) = Just l
+bR  Empty = Nothing
+bR  (Branch _ _ r) = Just r
+bNd Empty = Nothing
+bNd (Branch n _ _) = Just n            
+
+data GMKey = {
+  gmKeyY0 :: Int,  gmKeyY0X :: Int,
+  gmKeyYn :: Int,  gmKeyYnX :: Int
   }
-                     
-data GraphicMusicElm = GMContextElm MidiContext BinaryTree |
-                       GMNoteElm 
+
+data GraphicMusicElm = GMContextElm MidiContext (BinaryTree (GraphicMusic, GMKey)) |
+                       GMNoteElm    [MidiNote] 
                        
-data GraphicMusic    = [GraphicMusicElm]
+type GraphicMusic    = [GraphicMusicElm]
 
 midiPlayNote :: Int -> MidiNote -> IO ()
 midiPlayNote chnl (MidiNote note dur vol)
   = do midiNoteOn  chnl note vol 0
        midiNoteOff chnl note dur
-                                           
+
 data ScoreRenderElm = ScoreRenderElm
                    { hgltInfo :: Maybe (Double, Bool)  -- (dx, highlightable true)
                    , rendPic :: Picture ()
@@ -79,12 +87,12 @@ data ScoreRenderElm = ScoreRenderElm
 ----------------------------------------------------------------------------------------------------
 main = do addHeader jsHeader
           runBody $ do
-            center <<< wbutton "render" "render"                      
+            center <<< wbutton "render" "render"
             setTimeout 0 midiLoadPlugin
             setTimeout 1000 (midiNoteOn 0 50 127 0)
             scoreCanvas musicTest
             -- return $ midiPlayNote 0 $ MidiNote 50 127 .25
-         
+
 scoreCanvas :: Music -> Widget ()
 scoreCanvas score =
   do wraw (do canvas ! id "canvas"
@@ -95,7 +103,7 @@ scoreCanvas score =
      Just canv <- liftIO $ getCanvasById "canvas" 
      rdat <- drawCanvas score                     -- drawCanvas :: Music -> Widget [ScoreRenderElm]   
      let rndr    = liftM rendPic rdat
-         hglt    = toHighlight rdat
+         hglt    = toHighlight rdat 
          offsetX = 30
          offsetY = 30
      render canv $ do 
@@ -112,30 +120,46 @@ scoreCanvas score =
                   _                -> do return ()
      wraw $ p << ((show x) ++" "++ (show y))
      return ()
-       where pred x ((x1,x2),_) = (fromIntegral x) >= x1 && (fromIntegral x) < x2
+       where pred x (coor,_) = x >= x1Coor coor && x < x2Coor coor
              clickCoor :: EventData -> Maybe (Int, Int)
              clickCoor d = case evData d of
                             Click _ (x,y) -> Just (x,y)
                             _             -> Nothing
+  
 
-rendHighlights :: Color -> XBoundary -> Picture ()    
-rendHighlights c (dx1,dx2) = color c $ fill $ do rect (dx1, 0) (dx2, measureHeight gSGS)  
-                             
-toHighlight :: [ScoreRenderElm] -> [(XBoundary, Picture ())]
+toHighlight :: [ScoreRenderElm] -> [(BoxCoor, Picture ())]
 toHighlight dat
   = let vs    = catMaybes $ liftM hgltInfo dat
         eoM   = (fst $ last vs) + 20 -- End of measure   TODO: Get real end of measure value
         boM   = (fst $ head vs) - 20 -- Begin of measure   TODO: Get real begin of measure value
-        ws    = (boM,False) : vs ++ [(eoM,False)]   -- [(dx, Note/Rest == True)]
-        avgS  = zipWith (\(dx1,_) (dx2,e) -> ((dx1 + dx2)/2, e)) ws (tail ws)   -- BUG: Need to grab state dx and append to end, so there is a boundry for last note. Or better, use measure end as boundry. Or if last elmeent is not note or rest, then that case doesn't matter.
-        pairS = zipWith (\(dx1,e) (dx2,_) -> ((dx1,dx2)    , e)) avgS (tail avgS)
-        zs    = liftM fst $ filter snd pairS
+        boxes = getXBoundries boM eoM (0, measureHeight gSGS) vs -- BUG: Rendering. Updating y values for each notes. Must be done when testing how much a measure can take up on a page.
         redC  = RGBA 255 0   0 0.3
         yelC  = RGBA 255 255 0 0.3
-        hglt  = zipWith rendHighlights (cycle [redC,yelC]) zs
-    in zip zs hglt
+        hglts = zipWith rendHighlights (cycle [redC,yelC]) boxes
+    in zip bounds hglts
+  where rendHighlights :: Color -> XBoundary -> Picture ()    
+        rendHighlights c bc = color c $
+                              fill $
+                              do rect (fromIntegral $ x1Coor bc, fromIntegral $ y1Coor bc) (fromIntegral $ x2Coor bc, fromIntegral $ y2Coor bc)  
 
-type XBoundary = (Double, Double)
+getXBoundries :: Double -> Double -> (Double, Double) -> [(Double, Bool)] -> [BoxCoor]
+getXBoundries xStart xEnd (y1,y2) xs =
+  let ws    = (xStart,False) : xs ++ [(xEnd,False)]   -- [(dx, Note/Rest == True)]
+      avgS  = zipWith (\(dx1,_) (dx2,e) -> ((dx1 + dx2)/2, e)) ws (tail ws)   -- BUG: Need to grab state dx and append to end, so there is a boundry for last note. Or better, use measure end as boundry. Or if last elmeent is not note or rest, then that case doesn't matter.
+      pairs:: [((Double,Double), Bool)]
+      pairs = zipWith (\(dx1,e) (dx2,_) -> ((dx1,dx2)    , e)) avgS (tail avgS)
+      flts :: [(Double, Double)]
+      flts  = liftM fst $ filter snd pairs
+      boxes = liftM (toBox (y1,y2)) flts
+  in boxes
+  where toBox (y1,y2) (x1,x2) = BoxCoor {x1Coor = round x1, x2Coor = round x2, y1Coor = round y1, y2Coor = round y2}
+
+-- NOTE: Double vs Int, speed/canvas-errors
+-- NOTE: Watch int errors here
+data BoxCoor = BoxCoor {
+  x1Coor :: Int, y1Coor :: Int,
+  x2Coor :: Int, y2Coor :: Int
+  }  
 
 
 ----------------------------------------------------------------------------------------------------                      
