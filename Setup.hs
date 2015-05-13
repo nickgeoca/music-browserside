@@ -4,7 +4,7 @@
              DeriveDataTypeable,
              ForeignFunctionInterface,
              GeneralizedNewtypeDeriving  #-}
-
+-- Key words: TODO BUG NOTE CONTINUE
 import Haste
 import Haste.Graphics.Canvas hiding (Ctx, Shape)
 import Haste.Perch hiding (map, head)
@@ -42,7 +42,7 @@ infixr 0 !>
 
 data MidiNote = MidiNote {
   mNote :: Int,
-  mDur  :: Float,
+  mDur  :: Float
   }
 
 data MidiLocalContext = MidiLocalContext {
@@ -53,7 +53,6 @@ data MidiContext = MidiContext {
   mBPM  :: Int   -- BPM
   }
 
-
 data BinaryTree a = Empty | Branch a (BinaryTree a) (BinaryTree a)
 bL  Empty = Nothing
 bL  (Branch _ l _) = Just l
@@ -62,7 +61,7 @@ bR  (Branch _ _ r) = Just r
 bNd Empty = Nothing
 bNd (Branch n _ _) = Just n            
 
-data GMKey = {
+data GMKey = GMKey {
   gmKeyY0 :: Int,  gmKeyY0X :: Int,
   gmKeyYn :: Int,  gmKeyYnX :: Int
   }
@@ -72,15 +71,16 @@ data GraphicMusicElm = GMContextElm MidiContext (BinaryTree (GraphicMusic, GMKey
                        
 type GraphicMusic    = [GraphicMusicElm]
 
-midiPlayNote :: Int -> MidiNote -> IO ()
-midiPlayNote chnl (MidiNote note dur vol)
+midiPlayNote :: Int -> MidiContext -> MidiNote -> IO ()
+midiPlayNote chnl (MidiContext vol bpm) (MidiNote note dur) -- TODO: bpm integration 
   = do midiNoteOn  chnl note vol 0
        midiNoteOff chnl note dur
 
-data ScoreRenderElm = ScoreRenderElm
-                   { hgltInfo :: Maybe (Double, Bool)  -- (dx, highlightable true)
-                   , rendPic :: Picture ()
-                     }
+data ScoreRenderElm = ScoreRenderElm {  -- TODO: Rename
+  hgltInfo  :: Double,  -- dx
+  rendPic   :: Either (Picture ()) () , -- CONTINUE
+  midiNotes :: Maybe [MidiNote]  -- Maybe is note based (and has notes). Rests are a different case
+  }
 --  $ ==> <$> <*> **> <** ==> <|> ==> <<< -> ++> <++ ==> <<
 ----------------------------------------------------------------------------------------------------                      
 -- Main code
@@ -99,7 +99,7 @@ scoreCanvas score =
                      ! Haste.Perch.style "border: 1px solid black;"
                      ! atr "width" "600"
                      ! height "400"
-                     $ noHtml) `fire` OnClick
+                     $ noHtml) `pass` OnClick
      Just canv <- liftIO $ getCanvasById "canvas" 
      rdat <- drawCanvas score                     -- drawCanvas :: Music -> Widget [ScoreRenderElm]   
      let rndr    = liftM rendPic rdat
@@ -136,8 +136,8 @@ toHighlight dat
         redC  = RGBA 255 0   0 0.3
         yelC  = RGBA 255 255 0 0.3
         hglts = zipWith rendHighlights (cycle [redC,yelC]) boxes
-    in zip bounds hglts
-  where rendHighlights :: Color -> XBoundary -> Picture ()    
+    in zip boxes hglts
+  where rendHighlights :: Color -> BoxCoor -> Picture ()    
         rendHighlights c bc = color c $
                               fill $
                               do rect (fromIntegral $ x1Coor bc, fromIntegral $ y1Coor bc) (fromIntegral $ x2Coor bc, fromIntegral $ y2Coor bc)  
@@ -318,7 +318,7 @@ drawCanvas :: Music -> Widget [ScoreRenderElm]
 drawCanvas m = do setSData $ RendState 0 (Clef NoneClef 0 0) (Main.Key 0 Major) (Timing 4 4 Nothing)   -- TODO: create monad function then map over it. Default state of clef is "none" clef
                   drawCanvas' m []
 
--- BUG: Note rendering rule is wrong. Diff duration should be on same dx if not adjacent. Exception being end of notel?
+-- BUG: Note rendering rule is wrong. Diff duration should be on same dx if not adjacent. Exception being end of note?
 drawCanvas' :: Music -> [ScoreRenderElm] -> Widget [ScoreRenderElm]                  
 drawCanvas' [] pics = return pics
 drawCanvas' ((pos, elm): mus) pics =
@@ -326,7 +326,7 @@ drawCanvas' ((pos, elm): mus) pics =
      r <- case elm of 
            NoteElm ns -> do rs <- mapM notesToGraphics $ zip (cycle [0]) ns
                             sUpdAnnoDx noteAnno
-                            return $ zipWith ScoreRenderElm (firstNoteOnly state) rs  
+                            return $ zipWith ScoreRenderElm (firstNoteOnly state) rs
                               where firstNoteOnly state = (Just (sXDisp state, True)) : cycle [Nothing]  -- Give the first value a true, ignore the rest
            RestElm r  -> do return [] -- BUG: Update Rest Element in drawCanvas
            ModElm  m  -> do mapM modifiersToGraphics m
@@ -368,7 +368,7 @@ modifiersToGraphics e = do
                          in do setSData $ state {sTiming = t}
                                sUpdAnnoDx timingAnno
                                return p
-  return $ ScoreRenderElm (Just (sXDisp state, False)) r
+  return $ ScoreRenderElm (sXDisp state) r Nothing
         
                 
         
