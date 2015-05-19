@@ -40,59 +40,9 @@ newtype Shape a = Shape {unS :: Ctx -> IO a} -- TODO: Should be in library
 (!>) = flip trace
 infixr 0 !>             
 
-data MidiNote = MidiNote {
-  mDur   :: Duration,
-  mPitch :: Int
-  }
-
-data MidiLocalContext = MidiLocalContext {
-  mNil :: ()
-  }
-data MidiContext = MidiContext {
-  mVol  :: Int,  -- Volume (0-127)
-  mBPM  :: Int   -- BPM
-  }
-
-data BinaryTree a = Empty | Branch a (BinaryTree a) (BinaryTree a)
-bL  Empty = Nothing
-bL  (Branch _ l _) = Just l
-bR  Empty = Nothing
-bR  (Branch _ _ r) = Just r
-bNd Empty = Nothing
-bNd (Branch n _ _) = Just n            
-
-data GMKey = GMKey {
-  gmKeyY0 :: Int,  gmKeyY0X :: Int,
-  gmKeyYn :: Int,  gmKeyYnX :: Int
-  }
-
-data GraphicMusicElm = GMContextElm MidiContext (BinaryTree (GraphicMusic, GMKey)) |
-                       GMNoteElm    [MidiNote] 
-                       
-type GraphicMusic    = [GraphicMusicElm]
-
-midiPlayNote :: Int -> MidiContext -> MidiNote -> IO ()
-midiPlayNote chnl (MidiContext vol bpm) (MidiNote note dur) -- TODO: bpm integration 
-  = do midiNoteOn  chnl note vol 0
-       midiNoteOff chnl note dur
-                                     {-dx-}
-{- data ScoreRenderElm = ScoreRenderElm {  -- TODO: Rename
-    hgltInfo :: Maybe (Double, Bool),  -- (dx, highlightable true)
-    rendPic  :: Picture (),
-    midiNote :: Maybe MidiNote -}
-{-
-data ScoreRenderElm = ScoreRendNotes Double Position    [(MidiNote, Picture ())] |
-                      ScoreRendRest  Double Position     (Picture ())            |
-                      ScoreRendMod   Double              (Picture ())
--}
-data ScoreRenderElm = ScoreRendNotes HgltBox Position    [(MidiNote, Picture ())] |
-                      ScoreRendRest  HgltBox Position     (Picture ())            |
-                      ScoreRendMod                        (Picture ())
--- TODO:                      ScoreHgltMod   
-
---  $ ==> <$> <*> **> <** ==> <|> ==> <<< -> ++> <++ ==> <<
 ----------------------------------------------------------------------------------------------------                      
 -- Main code
+--  $ ==> <$> <*> **> <** ==> <|> ==> <<< -> ++> <++ ==> <<
 ----------------------------------------------------------------------------------------------------
 main = do addHeader jsHeader
           runBody $ do
@@ -328,14 +278,6 @@ typeWriterFn x dx y = do canvasWidth <- liftM sgsCanvasWidth (getSData :: Widget
                              x2'  = x1' + dx
                          in ((x1', x2'), y')
 
--- NOTE: Double vs Int, speed/canvas-errors
--- NOTE: Watch int errors here
-data BoxCoor = BoxCoor {
-  x1Coor :: Int, y1Coor :: Int,
-  x2Coor :: Int, y2Coor :: Int
-  }  
-
-
 ----------------------------------------------------------------------------------------------------                      
 -- Old Graphics (still sort of used)
 ----------------------------------------------------------------------------------------------------  
@@ -363,7 +305,130 @@ gSGS = ScoreGraphicSettings 10 5 40 500
 qnShape (x,y) = fill $ do circle (x,y) (qnSize gSGS); line (x-29,y-50) (x+20,y+20)
 
 musDur n d = n % d :: Ratio Int -- % :: Integral a => a -> a -> Ratio a infixl 7
-  
+----------------------------------------------------------------------------------------------------                      
+-- Random types. Better organize
+----------------------------------------------------------------------------------------------------  
+data ScoreRenderElm = ScoreRendNotes HgltBox Position    [(MidiNote, Picture ())] |
+                      ScoreRendRest  HgltBox Position     (Picture ())            |
+                      ScoreRendMod                        (Picture ())
+
+-- NOTE: Double vs Int, speed/canvas-errors
+-- NOTE: Watch int errors here
+data BoxCoor = BoxCoor {
+  x1Coor :: Int, y1Coor :: Int,
+  x2Coor :: Int, y2Coor :: Int
+  }  
+
+type HgltBorder = BoxCoor
+
+ 
+----------------------------------------------------------------------------------------------------                      
+-- List-Tree Data Structure
+----------------------------------------------------------------------------------------------------
+data BinaryTree a = Branch {
+  tL :: Maybe (BinaryTree a),
+  tR :: Maybe (BinaryTree a),
+  tD :: a  -- 'a' is at end, so it makes printing easier in the application.
+  } deriving (Show, Read)
+
+data LTNode k ds d = LTNode {
+  ltKey      :: k,
+  ltNodeDS   :: ds,
+  ltNodeData :: d
+  } deriving (Show, Read)
+
+data ListTree key lElm where
+  LTTree     :: BinaryTree (LTNode key (ListTree key lElm) lElm) -> ListTree key lElm
+  LTList     :: lElm  -> ListTree key lElm -> ListTree key lElm
+  LTNil      :: ListTree lElm
+  deriving (Show, Read)
+
+listToLT :: [a] -> ListTree a
+listToLT []     = LTNil
+listToLT (x:xs) = LTList x (toLT xs)
+              
+-- NOTE: Should this be strict?
+instance Foldable ListTree where
+  foldMap f LTNil         = mempty
+  foldMap f (LTList d ds) = f d `mappend` foldMap f ds
+  foldMap f (LTTree (BinaryTree l r (LTNode k ds d)))
+                          = f d `mappend` foldMap f ds
+  foldr f b = go
+    where go LTNil         = b
+          go (LTList d ds) = d `f` go ds 
+          go (LTTree (BinaryTree l r (LTNode k ds d)))
+                           = d 'f' go ds 
+
+
+instance Functor ListTree where
+  fmap f LTNil         = LTNil
+  fmap f (LTList d ds) = LTList (f d) (fmap f ds)
+  fmap f (LTTree (BinaryTree l r (LTNode k ds          d)))
+        = LTTree (BinaryTree l r (LTNode k (fmap f ds) (f d)))
+
+
+----------------------------------------------------------------------------------------------------                      
+-- Graphic/Midi Types
+----------------------------------------------------------------------------------------------------
+data MidiNote = MidiNote {
+  mDur   :: Duration,
+  mPitch :: Int
+  } deriving (Show, Read)
+
+data MidiLocalContext = MidiLocalContext {
+  mNil :: ()
+  } deriving (Show, Read)
+
+data MidiContext = MidiContext {
+  mVol  :: Int,  -- Volume (0-127)
+  mBpm  :: Int   -- BPM
+  } deriving (Show, Read)
+
+data GraphicMusicElm = GMNoteElm HgltBorder Position [MidiNote] |
+                       GMRestElm HgltBorder Position            |
+                       GMCtxtElm MidiContext
+                      deriving (Show, Read)
+
+type MidiHgltDS = ListTree HgltBorder GraphicMusicElm
+
+-- type GraphicMusic    = [GraphicMusicElm]
+
+data PlaybackState = PlaybackState {
+  pbVol  :: Int,
+  pbBpm  :: Int,
+  pbStop :: Bool
+  }
+
+playMusic ds vol bpm = do concurrent $ do
+                            bc <- newEmptyMVar :: MVar BoxCoor
+                            setSData $ vol bpm False
+                            forkIO $ hgltWhilePlaying bc
+                            playMusic' (MidiContext vol bpm) ds bc
+
+-- TODO!!!!!!!!!!!!! Use CIO here                       
+-- playMusic' :: MidiContext -> MidiHgltDS -> IO ()
+playMusic' ctxt0 lt hgltCoor =
+  do state <- getSData
+     guard $ pbStop state
+     -- TODO: Clear midi buffer?
+     let ctxt1 = ctxt0 {mVol = pbVol state, mBpm = pbBpm state}
+     case lt of
+      LTTree (Branch l r d) -> do playMusic (updCtxt (gmtMidiCtxt d) ctxt1) (gmtGM d) hgltCoor
+      LTList e xs           -> case e of
+        GMNoteElm pos ns       -> do putMVar (BoxCoor 0 0 30 30)
+                                     mapM (midiPlayNote 0 ctxt1) ns
+                                     playMusic ctxt xs hgltCoor
+      LTNil                 -> return ()
+                      
+updCtxt new old = old -- BUG: updating context in playMusic
+
+hgltWhilePlaying hgltCoor =
+  do coor <- takeMVar hgltCoor
+
+midiPlayNote :: Int -> MidiContext -> MidiNote -> IO ()
+midiPlayNote chnl (MidiContext vol bpm) (MidiNote note dur) -- TODO: bpm integration 
+  = do midiNoteOn  chnl note vol 0
+       midiNoteOff chnl note dur
 
 ----------------------------------------------------------------------------------------------------                      
 -- Music Graphic Types
@@ -622,7 +687,7 @@ quadraticCurve (x1,y1) (x2,y2) (cpx,cpy) = Shape $ \ctx -> do
 
 -- Javascript headers
 jsHeader :: Perch
-jsHeader = (   script ! atr "type "text/javascript" ! src "https://rawgit.com/mudcube/MIDI.js/master/inc/shim/Base64.js" $ noHtml)
+jsHeader = (   script ! atr "type" "text/javascript" ! src "https://rawgit.com/mudcube/MIDI.js/master/inc/shim/Base64.js" $ noHtml)
            <> (script ! atr "type" "text/javascript" ! src "https://rawgit.com/mudcube/MIDI.js/master/inc/shim/Base64binary.js" $ noHtml)
            <> (script ! atr "type" "text/javascript" ! src "https://rawgit.com/mudcube/MIDI.js/master/inc/shim/WebAudioAPI.js" $ noHtml)           
            --
