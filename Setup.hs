@@ -80,10 +80,14 @@ midiPlayNote chnl (MidiContext vol bpm) (MidiNote note dur) -- TODO: bpm integra
     hgltInfo :: Maybe (Double, Bool),  -- (dx, highlightable true)
     rendPic  :: Picture (),
     midiNote :: Maybe MidiNote -}
+{-
 data ScoreRenderElm = ScoreRendNotes Double Position    [(MidiNote, Picture ())] |
                       ScoreRendRest  Double Position     (Picture ())            |
                       ScoreRendMod   Double              (Picture ())
-
+-}
+data ScoreRenderElm = ScoreRendNotes HgltBox Position    [(MidiNote, Picture ())] |
+                      ScoreRendRest  HgltBox Position     (Picture ())            |
+                      ScoreRendMod                        (Picture ())
 -- TODO:                      ScoreHgltMod   
 
 --  $ ==> <$> <*> **> <** ==> <|> ==> <<< -> ++> <++ ==> <<
@@ -288,7 +292,21 @@ getHighlightBoxes xs = foldl' blah (HgltBorder 0 0 0 0) xs
   where blah box  = balksjdlfa;jsd
 
 
-
+{-
+-- TODO: Integrate the typeWriter fnct into placing of music-elements onto canvas.
+typeWriterFn (BoxCoor x1 y1 x2 y2)
+ = do canvasWidth <- liftM sgsCanvasWidth (getSData :: Widget SGSettingsDynamic)
+      let dy   = staffLineDy gSGS
+          dx   = x2 - x1
+          nwln = x2 > canvasWidth
+          -- 
+          x1'  = if nwln then 0      else x1
+          y1'  = if nwln then y + dy else y
+          x2'  = x1' + dx
+          y2'  = y1' + dy
+      in BoxCoor x1' y1' x2' y2'
+-}
+{-
 -- TODO: Integrate the typeWriter fnct into placing of music-elements onto canvas.
 typeWriterFn (x1,x2) y = do canvasWidth <- liftM sgsCanvasWidth (getSData :: Widget SGSettingsDynamic)
                             let dy   = staffLineDy gSGS
@@ -299,7 +317,17 @@ typeWriterFn (x1,x2) y = do canvasWidth <- liftM sgsCanvasWidth (getSData :: Wid
                                 x1'  = if nwln then 0      else x1
                                 x2'  = x1' + dx
                             in ((x1', x2'), y')
-        
+-}
+-- TODO: Integrate the typeWriter fnct into placing of music-elements onto canvas.
+typeWriterFn x dx y = do canvasWidth <- liftM sgsCanvasWidth (getSData :: Widget SGSettingsDynamic)
+                         let dy   = staffLineDy gSGS
+                             nwln = x + dx > canvasWidth
+                             -- 
+                             y'   = if nwln then y + dy else y
+                             x1'  = if nwln then 0      else x
+                             x2'  = x1' + dx
+                         in ((x1', x2'), y')
+
 -- NOTE: Double vs Int, speed/canvas-errors
 -- NOTE: Watch int errors here
 data BoxCoor = BoxCoor {
@@ -347,9 +375,9 @@ data MeasureLocation = BottomOfStaff |  -- Treble clef looks aligned this way
 noteAnnoDy nAn = fn $ measLoc nAn
                 where fn (NoteLocDy _ dy) = dy
 
-type Perc   = Double                       
+type Perc   = Double
 type DimXY  = (Double, Double)
-type PercXY = (Double, Double)     -- Percent (x,y)                
+type PercXY = (Double, Double)     -- Percent (x,y)
 data Annotation = Annotation { dimensions :: DimXY,
                                centerPoint:: PercXY,  -- (0,0) is upper left most. TODO: While whole note & quarter note base looks the same, the line upward from quaternote changes its dimensions. There are tradeoffs
                                measLoc    :: MeasureLocation,
@@ -441,15 +469,30 @@ instance Num Point where
 -- Retain sequence in event user zooms.
 diffDurNoteOffsetDx = 2 * adjacentNoteOffsetDx
 adjacentNoteOffsetDx = fst $ dimensions noteAnno
-sUpdAnnoDx    a = do s <- getSData ; setSData $ s {sXDisp = (sXDisp s) + (annoDx a)}
+{-
+sUpdAnnoDx    a = do s <- getSData 
+                     setSData $ s {sXPos = (sXPos s) + (annoDx a)}
+-}
+sUpdAnnoDx :: Annotation -> Widget HgltCoor
+sUpdAnnoDx a = do s <- getSData
+                  let x  = sXPos s
+                      dx = annoDx a
+                      y  = sYPos s
+                      ((x1', x2'), y') = typeWriterFn x dx y
+                    in setSData $ s { sXPos = x
+                                    , sYPos = y 
+                                    }
+                       return $ HgltCoor x y (x+dx) (y+staffLineDy gSGS)
+
 -- sUpdPos       p = do s <- getSData ; setSData $ s {sPos   = (sPos   s) + p}              
 -- Update dx following parallel notes of same duration.
--- sUpdParNoteDx   = do s <- getSData ; setSData $ s {sXDisp = (sXDisp s) + (fst $ dimensions noteAnno)}   -- TODO: Create global constant for update amount, outside of this function
-data RendState = RendState 
-  { sXDisp  :: Double
-  , sClef   :: Clef
-  , sKey    :: Key
-  , sTiming :: Timing
+-- sUpdParNoteDx   = do s <- getSData ; setSData $ s {sXPos = (sXPos s) + (fst $ dimensions noteAnno)}   -- TODO: Create global constant for update amount, outside of this function
+data RendState = RendState { 
+  sXPos  :: Double,
+  sYPos  :: Double,
+  sClef   :: Clef,
+  sKey    :: Key,
+  sTiming :: Timing,
 --  , sPos    :: Position  
   } deriving (Typeable)
 
@@ -464,25 +507,25 @@ noteRule1 ns = let n' = groupBy (\x y -> if dur x == dur y then True else False)
                               return $ join vss
 -}                   
              
+-- TODO: 
 -- drawCanvas :: Music -> Widget [ScoreRenderElm]   
-drawCanvas m = do setSData $ RendState 0 (Clef NoneClef 0 0) (Main.Key 0 Major) (Timing 4 4 Nothing)   -- TODO: create monad function then map over it. Default state of clef is "none" clef
-                  drawCanvas' m []
+drawCanvas m = do setSData $ RendState 0 0 (Clef NoneClef 0 0) (Main.Key 0 Major) (Timing 4 4 Nothing)   -- TODO: create monad function then map over it. Default state of clef is "none" clef
+                  drawCanvas' m
 
 -- BUG: Note rendering rule is wrong. Diff duration should be on same dx if not adjacent. Exception being end of note?
--- drawCanvas' :: Music -> [ScoreRenderElm] -> Widget [ScoreRenderElm]                  
-drawCanvas' [] pics = return pics
-drawCanvas' ((pos, elm): mus) pics =
+-- drawCanvas' :: Music -> Widget [ScoreRenderElm]                  
+drawCanvas' [] = return
+drawCanvas' ((pos, elm): mus) =
   do state <- (getSData :: Widget RendState) 
-     r <- case elm of 
-           NoteElm ns -> do sUpdAnnoDx noteAnno  -- Update state first, so don't grab anything after!
-                            pics <- mapM notesToGraphics $ zip (cycle [0]) ns
-                            let midinotes = map forward ns
-                                midiPics  = zip midinotes pics
-                                dx        = sXDisp state
-                            return $ ScoreRendNotes pos dx midiPics
-           RestElm r  -> do return [] -- BUG: Update Rest Element in drawCanvas
-           ModElm  m  -> do mapM modifiersToGraphics m
-     drawCanvas' mus (pics ++ r)   --  TODO: Inefficient list concat method?
+     let r = case elm of  
+              NoteElm ns -> do hglt <- sUpdAnnoDx noteAnno  -- Update state first, so don't grab anything after!
+                               pics <- mapM notesToGraphics $ zip (cycle [0]) ns
+                               let midinotes = map forward ns
+                                   midiPics  = zip midinotes pics
+                               return $ ScoreRendNotes hglt pos midiPics
+              RestElm r  -> do return [] -- BUG: Update Rest Element in drawCanvas
+              ModElm  m  -> do mapM modifiersToGraphics m
+     r ++ drawCanvas' mus      --  TODO: Inefficient list concat method?
 
 instance ConvertBothWay MidiNote Note where
   forward note = MidiNote (pitch note) (dur note)
@@ -497,33 +540,33 @@ notesAdjacent k n1 n2 = let fifths = keyfifths k
 notesToGraphics (dx,n) = do
   state <- getSData
   let c  = sClef state
-      x' = sXDisp state
-      y' = (measureHeight gSGS) - (noteDy c n)
+      x' = sXPos state
+      y' = sYPos - (noteDy c n) -- BUG: most definetly. 
     in return $ toPic n (x' + dx, y')
 
 -- modifiersToGraphics :: GlobalMod -> Picture ()
 modifiersToGraphics e = do
   state <- getSData
   r <- case e of 
-          ClefSym c   -> let x' = sXDisp state
-                             y' = (measureHeight gSGS) - (clefDy c)
-                             p  = toPic c (x', y')
+          ClefSym c   -> let x = sXPos state
+                             y = sYPos state - clefDy c
+                             p = toPic c (x', y')
                          in do setSData $ state {sClef = c}
                                sUpdAnnoDx clefAnno
                                return p
-          KeySym k    -> let x' = sXDisp state
+          KeySym k    -> let x' = sXPos state
                              y' = (measureHeight gSGS) - (keyDy k)
                              p  = toPic k (x', y')
                          in do setSData $ state {sKey = k}
                                sUpdAnnoDx keyAnno
                                return p
-          TimingSym t -> let x' = sXDisp state
+          TimingSym t -> let x' = sXPos state
                              y' = (measureHeight gSGS) - (timingDy t)
                              p  = toPic t (x', y')
                          in do setSData $ state {sTiming = t}
                                sUpdAnnoDx timingAnno
                                return p
-  return $ ScoreRendMod (sXDisp state) r   
+  return $ ScoreRendMod r
                 
         
 ----------------------------------------------------------------------------------------------------                      
@@ -579,7 +622,7 @@ quadraticCurve (x1,y1) (x2,y2) (cpx,cpy) = Shape $ \ctx -> do
 
 -- Javascript headers
 jsHeader :: Perch
-jsHeader = (   script ! atr "type" "text/javascript" ! src "https://rawgit.com/mudcube/MIDI.js/master/inc/shim/Base64.js" $ noHtml)
+jsHeader = (   script ! atr "type "text/javascript" ! src "https://rawgit.com/mudcube/MIDI.js/master/inc/shim/Base64.js" $ noHtml)
            <> (script ! atr "type" "text/javascript" ! src "https://rawgit.com/mudcube/MIDI.js/master/inc/shim/Base64binary.js" $ noHtml)
            <> (script ! atr "type" "text/javascript" ! src "https://rawgit.com/mudcube/MIDI.js/master/inc/shim/WebAudioAPI.js" $ noHtml)           
            --
