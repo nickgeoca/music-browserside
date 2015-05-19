@@ -41,8 +41,8 @@ newtype Shape a = Shape {unS :: Ctx -> IO a} -- TODO: Should be in library
 infixr 0 !>             
 
 data MidiNote = MidiNote {
-  mNote :: Int,
-  mDur  :: Float
+  mDur   :: Duration,
+  mPitch :: Int
   }
 
 data MidiLocalContext = MidiLocalContext {
@@ -75,12 +75,17 @@ midiPlayNote :: Int -> MidiContext -> MidiNote -> IO ()
 midiPlayNote chnl (MidiContext vol bpm) (MidiNote note dur) -- TODO: bpm integration 
   = do midiNoteOn  chnl note vol 0
        midiNoteOff chnl note dur
+                                     {-dx-}
+{- data ScoreRenderElm = ScoreRenderElm {  -- TODO: Rename
+    hgltInfo :: Maybe (Double, Bool),  -- (dx, highlightable true)
+    rendPic  :: Picture (),
+    midiNote :: Maybe MidiNote -}
+data ScoreRenderElm = ScoreRendNotes Double Position    [(MidiNote, Picture ())] |
+                      ScoreRendRest  Double Position     (Picture ())            |
+                      ScoreRendMod   Double              (Picture ())
 
-data ScoreRenderElm = ScoreRenderElm {  -- TODO: Rename
-  hgltInfo  :: Double,  -- dx
-  rendPic   :: Either (Picture ()) () , -- CONTINUE
-  midiNotes :: Maybe [MidiNote]  -- Maybe is note based (and has notes). Rests are a different case
-  }
+-- TODO:                      ScoreHgltMod   
+
 --  $ ==> <$> <*> **> <** ==> <|> ==> <<< -> ++> <++ ==> <<
 ----------------------------------------------------------------------------------------------------                      
 -- Main code
@@ -93,40 +98,163 @@ main = do addHeader jsHeader
             scoreCanvas musicTest
             -- return $ midiPlayNote 0 $ MidiNote 50 127 .25
 
+
 scoreCanvas :: Music -> Widget ()
 scoreCanvas score =
-  do wraw (do canvas ! id "canvas"
-                     ! Haste.Perch.style "border: 1px solid black;"
-                     ! atr "width" "600"
-                     ! height "400"
-                     $ noHtml) `pass` OnClick
-     Just canv <- liftIO $ getCanvasById "canvas" 
-     rdat <- drawCanvas score                     -- drawCanvas :: Music -> Widget [ScoreRenderElm]   
-     let rndr    = liftM rendPic rdat
-         hglt    = toHighlight rdat 
-         offsetX = 30
-         offsetY = 30
+  do return ()
+
+     -- Process score data into score rendering and midi/highlighting.
+     scoreData <- drawCanvas score                     -- Widget [ScoreRenderElm]
+     let rndr     = scoreToPictures scoreData :: [Picture ()]
+         midiHglt = scoreToMidiHglt scoreData :: MidiHgltDS
+         offsetX  = 30
+         offsetY  = 30
+         scoreCanvasId = "1"
+         hgltCanvasId  = "2"
+         canvasHeight  = 400
+
+     -- Initialize dynamic data
+     setSData (SGSettingsDynamic 600) 
+     canvasWidth <- liftM sgsCanvasWidth (getSData :: SGSettingsDynamic)
+
+     -- Score canvas
+     wraw (appCanvas canvasWidth canvasHeight scoreCanvasId)
+     Just scoreCanv <- liftIO $ getCanvasById scoreCanvasId  -- BUG: Handle nothing case
      render canv $ do 
        translate (offsetX, offsetY) $ do 
          staffShape (0,0) 100
-         sequence_ rndr
-         -- sequence_ hglt
-     Just (x,y) <- liftM clickCoor getEventData   -- BUG: Handle nothing case
-     let xAdj = x - (round offsetX)
-     renderOnTop canv $ do
+         sequence_ rndr  
+
+     -- Highlight canvas
+       -- wraw (scoreCanvas 600 400 hgltCanvasId) `pass` OnClick
+       -- Just (x,y) <- liftM clickCoor getEventData   -- BUG: Handle nothing case
+       -- wraw $ p << ((show x) ++" "++ (show y))
+     wraw (appCanvas canvasWidth canvasHeight hgltCanvasId)
+     Just hgltCanv <- liftIO $ getCanvasById scoreCanvasId  -- BUG: Handle nothing case
+
+     -- **********// Widget Event //**********
+     center <<< wbutton "play" "play"         -- Play button
+     
+     -- Highlighting
+       -- let xAdj = x - (round offsetX)
+     let xAdj = 30
+     renderOnTop hgltCanv $ do
                translate (offsetX, offsetY) $        -- TODO: Use find on different data structure that is more efficient.
                  case find (pred xAdj) hglt of       -- TODO: Make maybe cleaner here
                   Just (_,hgltBox) -> do hgltBox
                   _                -> do return ()
-     wraw $ p << ((show x) ++" "++ (show y))
+     
+     -- Return
      return ()
+     
+     -- Where clause
        where pred x (coor,_) = x >= x1Coor coor && x < x2Coor coor
              clickCoor :: EventData -> Maybe (Int, Int)
              clickCoor d = case evData d of
                             Click _ (x,y) -> Just (x,y)
                             _             -> Nothing
-  
+             appCanvas x y canvasId = (do canvas ! id canvasId
+                                            ! Haste.Perch.style "border: 1px solid black;"
+                                            ! atr "width" (show x)
+                                            ! height (show y)
+                                            $ noHtml)
 
+scoreToPictures :: [ScoreRenderElm] -> [Picture ()]
+scoreToPictures (x:xs) = case x of
+                          ScoreRendNotes _ _ ls -> extract ls ++ scoreDataToRenderData xs
+                          ScoreRendRest  _ p    -> p          :  scoreDataToRenderData xs
+                          ScoreRendMod   _ p    -> p          :  scoreDataToRenderData xs
+  where extract (x:xs) = snd x : extract xs
+        extract []     = []
+scoreToPictures []     = []
+
+
+
+  
+scoreToMidiHglt :: [ScoreRenderElm] -> MidiHgltDS
+scoreToMidiHglt scoreData = let ds1 = fn LTNil scoreData
+                                ds2 = removeRestSameBeatAsNote ds1
+                                ds3 = buildTree ds2
+                            in ds3
+  where fn mhds (x:xs) = case x of
+                          ScoreRendNotes dx pos nps -> let midis    = map fst nps  -- [(MidiNote, Picture ())] -> [MidiNote]
+                                                           hgltCoor = HgltBorder 
+                                                           fn (LTList (GMNoteElm hgltCoor pos midis) mhds) xs
+                          ScoreRendRest  _ p        -> fn (LTList (GMRestElm hgltCoor pos) mhds) xs
+                          ScoreRendMod   _ p        -> 
+        fn mhds []     = mhds
+
+-- 1) Remove rests on identical beat as notes, but not the rests that are on same beat as modification elmements.
+-- 2) Convert Double in ScoreRenderElm to highlight box. Use typewriter method. Increment until hit end, then reset, while also increment y during x reset.
+-- 3) Keep Position in ScoreRenderElm. This will be used for midi timings.
+-- 4) Keep MidiNote.
+-- 5) Build ListTree. Use ScoreRendMod as the tree nodes, and notes/rests as the list elements        
+fnct xs = let bla0 = removeRestSameBeatAsNote xs
+
+              -- Get highlight box x boundaries
+              blA1 = liftM dxNoteRest bla0
+              blA2 = getXBoundries 0 400 blA1  -- BUG: Don't know start/stop of end measure
+              blA3 = getHighlightBoxes blA2
+              blA3 = combineXRegion
+
+              bla1 = toGMtype bla0 :: [GraphicMusicElm]
+          in a
+  where removeRestSameBeatAsNote xs = undefined
+        toGMtype :: [ScoreRenderElm] -> [GraphicMusicElm]
+        toGMtype xs = let ys = incDx xs
+                      in
+                       where f case x of
+                               (ScoreRendNotes dx p ls) (x,y) -> GMNoteElm (HgltBorder dx 0 0 0) p (map fst ls)
+                               (ScoreRendRest  dx p _ ) (x,y) -> GMRestElm (HgltBorder dx 0 0 0) p
+                               (ScoreRendMod   dx   _ ) (x,y) -> GMCtxtElm 2 2
+                             incDx (x:xs) = askf
+        dxNoteRest (ScoreRendNotes dx _ _) = (dx, True)
+        dxNoteRest (ScoreRendRest  dx _ _) = (dx, True)
+        dxNoteRest (ScoreRendMod   dx   _) = (dx, False)
+        
+        
+{-
+-- Incomplete. Probably need to use state monad              
+where removeRestSameBeatAsNote xs = concat $ liftM getSingleElm $ groupBy flt xs   -- This filters out the rests that are on same beat as notes
+        where flt (ScoreRendNotes _ p1 _) (ScoreRendRest  _ p2 _) = p1 == p2
+              flt (ScoreRendRest  _ p1 _) (ScoreRendNotes _ p2 _) = p1 == p2
+              flt (ScoreRendRest  _ p1 _) (ScoreRendRest  _ p2 _) = p1 == p2
+              flt _ _ = False
+              getSingleElm xs = case head $ filter fTest xs then
+                where fTest (ScoreRendNotes x y z) = True
+                      fTest                      _ = False
+              getSingleElm (x:y:s) = error!!! -- If more than one, then find the notes, ignore rest.
+-}
+
+--[ScoreRenderElm] ->
+blah (a:as) =
+  do canvasWidth <- liftM sgsCanvasWidth  (getSData :: Widget ScoreGraphicSettings)
+  case a of              
+
+        
+
+-- NOTE: Good idea or bad to have datastructure full of pictures? vs drawing at runtime                      
+data ScoreHgltElm   = ScoreHgltNotes (HgltBorder, Picture ()) Position [MidiNote] |
+                      ScoreHgltRest  (HgltBorder, Picture ()) |
+                      ScoreRendMod   
+
+toHighlight :: [ScoreRenderElm] -> [ScoreHgltElm]
+toHighlight dat
+  = let vs = concat $ liftM getSingleElm $ groupBy flt dat   -- This filters out the rests that are on same beat as notes
+        boM   = (getDx . head vs) - 20 -- Begin of measure   TODO: Get real begin of measure value
+        eoM   = (getDx . last vs) + 20 -- End of measure   TODO: Get real end of measure value
+        boxes = getXBoundaries boM eOm 
+        
+    in a
+  where flt (ScoreRendNotes _ p1 _) (ScoreRendRest  _ p2 _) = p1 == p2
+        flt (ScoreRendRest  _ p1 _) (ScoreRendNotes _ p2 _) = p1 == p2
+        flt (ScoreRendRest  _ p1 _) (ScoreRendRest  _ p2 _) = p1 == p2
+        flt _ _ = False
+        getDx (ScoreRendNotes x _ _) = x
+        getDx (ScoreRendRest  x _ _) = x
+        getDx (ScoreRendMod   x   _) = x
+        getSingleElm (x:xs) = error!!! -- If more than one, then find the notes, ignore rest.
+       
 toHighlight :: [ScoreRenderElm] -> [(BoxCoor, Picture ())]
 toHighlight dat
   = let vs    = catMaybes $ liftM hgltInfo dat
@@ -142,18 +270,36 @@ toHighlight dat
                               fill $
                               do rect (fromIntegral $ x1Coor bc, fromIntegral $ y1Coor bc) (fromIntegral $ x2Coor bc, fromIntegral $ y2Coor bc)  
 
-getXBoundries :: Double -> Double -> (Double, Double) -> [(Double, Bool)] -> [BoxCoor]
-getXBoundries xStart xEnd (y1,y2) xs =
+getXBoundries :: Double -> Double -> (Double, Double) -> [(Double, Bool)] -> [(Int, Int)]
+getXBoundries xStart xEnd xs =
   let ws    = (xStart,False) : xs ++ [(xEnd,False)]   -- [(dx, Note/Rest == True)]
       avgS  = zipWith (\(dx1,_) (dx2,e) -> ((dx1 + dx2)/2, e)) ws (tail ws)   -- BUG: Need to grab state dx and append to end, so there is a boundry for last note. Or better, use measure end as boundry. Or if last elmeent is not note or rest, then that case doesn't matter.
       pairs:: [((Double,Double), Bool)]
       pairs = zipWith (\(dx1,e) (dx2,_) -> ((dx1,dx2)    , e)) avgS (tail avgS)
+      rndTup (x,y) = (round x, round y)
       flts :: [(Double, Double)]
-      flts  = liftM fst $ filter snd pairs
-      boxes = liftM (toBox (y1,y2)) flts
-  in boxes
-  where toBox (y1,y2) (x1,x2) = BoxCoor {x1Coor = round x1, x2Coor = round x2, y1Coor = round y1, y2Coor = round y2}
+      flts  = liftM (rndTup.fst) $ filter snd pairs
+  in flts
+      -- nboxes = liftM (toBox (y1,y2)) flts
+  -- in boxes
+  -- where toBox (y1,y2) (x1,x2) = BoxCoor {x1Coor = round x1, x2Coor = round x2, y1Coor = round y1, y2Coor = round y2}
 
+getHighlightBoxes xs = foldl' blah (HgltBorder 0 0 0 0) xs
+  where blah box  = balksjdlfa;jsd
+
+
+
+-- TODO: Integrate the typeWriter fnct into placing of music-elements onto canvas.
+typeWriterFn (x1,x2) y = do canvasWidth <- liftM sgsCanvasWidth (getSData :: Widget SGSettingsDynamic)
+                            let dy   = staffLineDy gSGS
+                                dx   = x2 - x1
+                                nwln = x2 > canvasWidth
+                                -- 
+                                y'   = if nwln then y + dy else y
+                                x1'  = if nwln then 0      else x1
+                                x2'  = x1' + dx
+                            in ((x1', x2'), y')
+        
 -- NOTE: Double vs Int, speed/canvas-errors
 -- NOTE: Watch int errors here
 data BoxCoor = BoxCoor {
@@ -172,14 +318,18 @@ staffShape (x,y) dx = stroke $ do
   Prelude.mapM_ (fn x dx) [y+ yy * dy | yy <- [0..4]]
   where fn = \x d y -> line (x, y) (x + d, y) -- (x1, y1) (x2, y2)
   
-  -- Graphics Master Settings
+data SGSettingsDynamic = SGSettingsDynamic {
+  sgsCanvasWidth :: Double
+  } deriving (Show)
+
+-- Graphics Master Settings
 data ScoreGraphicSettings = ScoreGraphicSettings
                             { staffLineDy :: Double  
                             , qnSize :: Double
                             , measureHeight :: Double
                      } deriving (Show)   
 
-gSGS = ScoreGraphicSettings 10 5 40
+gSGS = ScoreGraphicSettings 10 5 40 500
 
 -- qN
 qnShape (x,y) = fill $ do circle (x,y) (qnSize gSGS); line (x-29,y-50) (x+20,y+20)
@@ -314,23 +464,28 @@ noteRule1 ns = let n' = groupBy (\x y -> if dur x == dur y then True else False)
                               return $ join vss
 -}                   
              
-drawCanvas :: Music -> Widget [ScoreRenderElm]   
+-- drawCanvas :: Music -> Widget [ScoreRenderElm]   
 drawCanvas m = do setSData $ RendState 0 (Clef NoneClef 0 0) (Main.Key 0 Major) (Timing 4 4 Nothing)   -- TODO: create monad function then map over it. Default state of clef is "none" clef
                   drawCanvas' m []
 
 -- BUG: Note rendering rule is wrong. Diff duration should be on same dx if not adjacent. Exception being end of note?
-drawCanvas' :: Music -> [ScoreRenderElm] -> Widget [ScoreRenderElm]                  
+-- drawCanvas' :: Music -> [ScoreRenderElm] -> Widget [ScoreRenderElm]                  
 drawCanvas' [] pics = return pics
 drawCanvas' ((pos, elm): mus) pics =
   do state <- (getSData :: Widget RendState) 
      r <- case elm of 
-           NoteElm ns -> do rs <- mapM notesToGraphics $ zip (cycle [0]) ns
-                            sUpdAnnoDx noteAnno
-                            return $ zipWith ScoreRenderElm (firstNoteOnly state) rs
-                              where firstNoteOnly state = (Just (sXDisp state, True)) : cycle [Nothing]  -- Give the first value a true, ignore the rest
+           NoteElm ns -> do sUpdAnnoDx noteAnno  -- Update state first, so don't grab anything after!
+                            pics <- mapM notesToGraphics $ zip (cycle [0]) ns
+                            let midinotes = map forward ns
+                                midiPics  = zip midinotes pics
+                                dx        = sXDisp state
+                            return $ ScoreRendNotes pos dx midiPics
            RestElm r  -> do return [] -- BUG: Update Rest Element in drawCanvas
            ModElm  m  -> do mapM modifiersToGraphics m
-     drawCanvas' mus (pics ++ r)   -- TODO: Inefficient list concat method?
+     drawCanvas' mus (pics ++ r)   --  TODO: Inefficient list concat method?
+
+instance ConvertBothWay MidiNote Note where
+  forward note = MidiNote (pitch note) (dur note)
 
                
 notesAdjacent k n1 n2 = let fifths = keyfifths k
@@ -368,14 +523,13 @@ modifiersToGraphics e = do
                          in do setSData $ state {sTiming = t}
                                sUpdAnnoDx timingAnno
                                return p
-  return $ ScoreRenderElm (sXDisp state) r Nothing
-        
+  return $ ScoreRendMod (sXDisp state) r   
                 
         
 ----------------------------------------------------------------------------------------------------                      
 -- Examples
 ----------------------------------------------------------------------------------------------------  
-
+ERROR, use position in graphmustype
 musicTest :: Music       
 musicTest = [ (0 % 1,ModElm [ ClefSym (Clef {clefsign = GClef, clefline = 2, clefoctalt = 0})
                             , KeySym (Main.Key {keyfifths = 0, keymode = Major})
