@@ -3,8 +3,11 @@
              FlexibleInstances,
              DeriveDataTypeable,
              ForeignFunctionInterface,
-             GeneralizedNewtypeDeriving  #-}
--- Key words: TODO BUG NOTE CONTINUE
+             GeneralizedNewtypeDeriving,
+             GADTs  #-}
+-- Key words: TODO, BUG, NOTE, CONTINUE
+--  $ ==> <$> <*> **> <** ==> <|> ==> <<< -> ++> <++ ==> <<
+
 import Haste
 import Haste.Graphics.Canvas hiding (Ctx, Shape)
 import Haste.Perch hiding (map, head)
@@ -42,7 +45,6 @@ infixr 0 !>
 
 ----------------------------------------------------------------------------------------------------                      
 -- Main code
---  $ ==> <$> <*> **> <** ==> <|> ==> <<< -> ++> <++ ==> <<
 ----------------------------------------------------------------------------------------------------
 main = do addHeader jsHeader
           runBody $ do
@@ -116,167 +118,37 @@ scoreCanvas score =
 scoreToPictures :: [ScoreRenderElm] -> [Picture ()]
 scoreToPictures (x:xs) = case x of
                           ScoreRendNotes _ _ ls -> extract ls ++ scoreDataToRenderData xs
-                          ScoreRendRest  _ p    -> p          :  scoreDataToRenderData xs
-                          ScoreRendMod   _ p    -> p          :  scoreDataToRenderData xs
+                          ScoreRendRest  _ _ p  -> p          :  scoreDataToRenderData xs
+                          ScoreRendMod       p  -> p          :  scoreDataToRenderData xs
   where extract (x:xs) = snd x : extract xs
         extract []     = []
 scoreToPictures []     = []
 
-
-
-  
-scoreToMidiHglt :: [ScoreRenderElm] -> MidiHgltDS
-scoreToMidiHglt scoreData = let ds1 = fn LTNil scoreData
-                                ds2 = removeRestSameBeatAsNote ds1
-                                ds3 = buildTree ds2
-                            in ds3
-  where fn mhds (x:xs) = case x of
-                          ScoreRendNotes dx pos nps -> let midis    = map fst nps  -- [(MidiNote, Picture ())] -> [MidiNote]
-                                                           hgltCoor = HgltBorder 
-                                                           fn (LTList (GMNoteElm hgltCoor pos midis) mhds) xs
-                          ScoreRendRest  _ p        -> fn (LTList (GMRestElm hgltCoor pos) mhds) xs
-                          ScoreRendMod   _ p        -> 
-        fn mhds []     = mhds
-
 -- 1) Remove rests on identical beat as notes, but not the rests that are on same beat as modification elmements.
--- 2) Convert Double in ScoreRenderElm to highlight box. Use typewriter method. Increment until hit end, then reset, while also increment y during x reset.
--- 3) Keep Position in ScoreRenderElm. This will be used for midi timings.
--- 4) Keep MidiNote.
--- 5) Build ListTree. Use ScoreRendMod as the tree nodes, and notes/rests as the list elements        
-fnct xs = let bla0 = removeRestSameBeatAsNote xs
-
-              -- Get highlight box x boundaries
-              blA1 = liftM dxNoteRest bla0
-              blA2 = getXBoundries 0 400 blA1  -- BUG: Don't know start/stop of end measure
-              blA3 = getHighlightBoxes blA2
-              blA3 = combineXRegion
-
-              bla1 = toGMtype bla0 :: [GraphicMusicElm]
-          in a
-  where removeRestSameBeatAsNote xs = undefined
-        toGMtype :: [ScoreRenderElm] -> [GraphicMusicElm]
-        toGMtype xs = let ys = incDx xs
-                      in
-                       where f case x of
-                               (ScoreRendNotes dx p ls) (x,y) -> GMNoteElm (HgltBorder dx 0 0 0) p (map fst ls)
-                               (ScoreRendRest  dx p _ ) (x,y) -> GMRestElm (HgltBorder dx 0 0 0) p
-                               (ScoreRendMod   dx   _ ) (x,y) -> GMCtxtElm 2 2
-                             incDx (x:xs) = askf
-        dxNoteRest (ScoreRendNotes dx _ _) = (dx, True)
-        dxNoteRest (ScoreRendRest  dx _ _) = (dx, True)
-        dxNoteRest (ScoreRendMod   dx   _) = (dx, False)
-        
-        
-{-
--- Incomplete. Probably need to use state monad              
-where removeRestSameBeatAsNote xs = concat $ liftM getSingleElm $ groupBy flt xs   -- This filters out the rests that are on same beat as notes
-        where flt (ScoreRendNotes _ p1 _) (ScoreRendRest  _ p2 _) = p1 == p2
-              flt (ScoreRendRest  _ p1 _) (ScoreRendNotes _ p2 _) = p1 == p2
-              flt (ScoreRendRest  _ p1 _) (ScoreRendRest  _ p2 _) = p1 == p2
-              flt _ _ = False
-              getSingleElm xs = case head $ filter fTest xs then
-                where fTest (ScoreRendNotes x y z) = True
-                      fTest                      _ = False
-              getSingleElm (x:y:s) = error!!! -- If more than one, then find the notes, ignore rest.
--}
-
---[ScoreRenderElm] ->
-blah (a:as) =
-  do canvasWidth <- liftM sgsCanvasWidth  (getSData :: Widget ScoreGraphicSettings)
-  case a of              
-
-        
-
--- NOTE: Good idea or bad to have datastructure full of pictures? vs drawing at runtime                      
-data ScoreHgltElm   = ScoreHgltNotes (HgltBorder, Picture ()) Position [MidiNote] |
-                      ScoreHgltRest  (HgltBorder, Picture ()) |
-                      ScoreRendMod   
-
-toHighlight :: [ScoreRenderElm] -> [ScoreHgltElm]
-toHighlight dat
-  = let vs = concat $ liftM getSingleElm $ groupBy flt dat   -- This filters out the rests that are on same beat as notes
-        boM   = (getDx . head vs) - 20 -- Begin of measure   TODO: Get real begin of measure value
-        eoM   = (getDx . last vs) + 20 -- End of measure   TODO: Get real end of measure value
-        boxes = getXBoundaries boM eOm 
-        
-    in a
-  where flt (ScoreRendNotes _ p1 _) (ScoreRendRest  _ p2 _) = p1 == p2
-        flt (ScoreRendRest  _ p1 _) (ScoreRendNotes _ p2 _) = p1 == p2
-        flt (ScoreRendRest  _ p1 _) (ScoreRendRest  _ p2 _) = p1 == p2
-        flt _ _ = False
-        getDx (ScoreRendNotes x _ _) = x
-        getDx (ScoreRendRest  x _ _) = x
-        getDx (ScoreRendMod   x   _) = x
-        getSingleElm (x:xs) = error!!! -- If more than one, then find the notes, ignore rest.
-       
-toHighlight :: [ScoreRenderElm] -> [(BoxCoor, Picture ())]
-toHighlight dat
-  = let vs    = catMaybes $ liftM hgltInfo dat
-        eoM   = (fst $ last vs) + 20 -- End of measure   TODO: Get real end of measure value
-        boM   = (fst $ head vs) - 20 -- Begin of measure   TODO: Get real begin of measure value
-        boxes = getXBoundries boM eoM (0, measureHeight gSGS) vs -- BUG: Rendering. Updating y values for each notes. Must be done when testing how much a measure can take up on a page.
-        redC  = RGBA 255 0   0 0.3
-        yelC  = RGBA 255 255 0 0.3
-        hglts = zipWith rendHighlights (cycle [redC,yelC]) boxes
-    in zip boxes hglts
-  where rendHighlights :: Color -> BoxCoor -> Picture ()    
-        rendHighlights c bc = color c $
-                              fill $
-                              do rect (fromIntegral $ x1Coor bc, fromIntegral $ y1Coor bc) (fromIntegral $ x2Coor bc, fromIntegral $ y2Coor bc)  
-
-getXBoundries :: Double -> Double -> (Double, Double) -> [(Double, Bool)] -> [(Int, Int)]
-getXBoundries xStart xEnd xs =
-  let ws    = (xStart,False) : xs ++ [(xEnd,False)]   -- [(dx, Note/Rest == True)]
-      avgS  = zipWith (\(dx1,_) (dx2,e) -> ((dx1 + dx2)/2, e)) ws (tail ws)   -- BUG: Need to grab state dx and append to end, so there is a boundry for last note. Or better, use measure end as boundry. Or if last elmeent is not note or rest, then that case doesn't matter.
-      pairs:: [((Double,Double), Bool)]
-      pairs = zipWith (\(dx1,e) (dx2,_) -> ((dx1,dx2)    , e)) avgS (tail avgS)
-      rndTup (x,y) = (round x, round y)
-      flts :: [(Double, Double)]
-      flts  = liftM (rndTup.fst) $ filter snd pairs
-  in flts
-      -- nboxes = liftM (toBox (y1,y2)) flts
-  -- in boxes
-  -- where toBox (y1,y2) (x1,x2) = BoxCoor {x1Coor = round x1, x2Coor = round x2, y1Coor = round y1, y2Coor = round y2}
-
-getHighlightBoxes xs = foldl' blah (HgltBorder 0 0 0 0) xs
-  where blah box  = balksjdlfa;jsd
-
+-- 2) Keep Position in ScoreRenderElm. This will be used for midi timings.
+-- 3) Keep MidiNote.
+-- 4) Build ListTree. Use ScoreRendMod as the tree nodes, and notes/rests as the list elements        
+scoreToMGDS :: [ScoreRenderElm] -> MidiHgltDS
+scoreToMGDS xs = let xs1 = removeRestSameBeatAsNote xs
+                     xs2 = toGMList xs1  
+                     ds1 = listToLT xs2
+                 in dsn
+  where isNotModifier (ScoreRendMod _) = False
+        isNotModifier _                = True
+        toGMList :: [ScoreRenderElm] -> [GraphicMusicElm]
+        toGMList (x:xs) = case x of
+                           ScoreRendNotes h p ls -> GMNoteElm h p (extract ls) : toGMList xs
+                           ScoreRendRest  h p _  -> GMRestElm h p              : toGMList xs
+                           ScoreRendMod       _  -> toGMList xs  -- BUG: Want to keep some modifiers, but removing all for now
+          where extract (x:xs) = fst x : extract xs
+                extract []     = []
+        toGMList []     = []
 
 {-
--- TODO: Integrate the typeWriter fnct into placing of music-elements onto canvas.
-typeWriterFn (BoxCoor x1 y1 x2 y2)
- = do canvasWidth <- liftM sgsCanvasWidth (getSData :: Widget SGSettingsDynamic)
-      let dy   = staffLineDy gSGS
-          dx   = x2 - x1
-          nwln = x2 > canvasWidth
-          -- 
-          x1'  = if nwln then 0      else x1
-          y1'  = if nwln then y + dy else y
-          x2'  = x1' + dx
-          y2'  = y1' + dy
-      in BoxCoor x1' y1' x2' y2'
+data ScoreRenderElm = ScoreRendNotes HgltBox Position    [(MidiNote, Picture ())] |
+                      ScoreRendRest  HgltBox Position     (Picture ())            |
+                      ScoreRendMod                        (Picture ())
 -}
-{-
--- TODO: Integrate the typeWriter fnct into placing of music-elements onto canvas.
-typeWriterFn (x1,x2) y = do canvasWidth <- liftM sgsCanvasWidth (getSData :: Widget SGSettingsDynamic)
-                            let dy   = staffLineDy gSGS
-                                dx   = x2 - x1
-                                nwln = x2 > canvasWidth
-                                -- 
-                                y'   = if nwln then y + dy else y
-                                x1'  = if nwln then 0      else x1
-                                x2'  = x1' + dx
-                            in ((x1', x2'), y')
--}
--- TODO: Integrate the typeWriter fnct into placing of music-elements onto canvas.
-typeWriterFn x dx y = do canvasWidth <- liftM sgsCanvasWidth (getSData :: Widget SGSettingsDynamic)
-                         let dy   = staffLineDy gSGS
-                             nwln = x + dx > canvasWidth
-                             -- 
-                             y'   = if nwln then y + dy else y
-                             x1'  = if nwln then 0      else x
-                             x2'  = x1' + dx
-                         in ((x1', x2'), y')
 
 ----------------------------------------------------------------------------------------------------                      
 -- Old Graphics (still sort of used)
@@ -633,6 +505,16 @@ modifiersToGraphics e = do
                                return p
   return $ ScoreRendMod r
                 
+
+typeWriterFn x dx y = do canvasWidth <- liftM sgsCanvasWidth (getSData :: Widget SGSettingsDynamic)
+                         let dy   = staffLineDy gSGS
+                             nwln = x + dx > canvasWidth
+                             -- 
+                             y'   = if nwln then y + dy else y
+                             x1'  = if nwln then 0      else x
+                             x2'  = x1' + dx
+                         in ((x1', x2'), y')
+
         
 ----------------------------------------------------------------------------------------------------                      
 -- Examples
