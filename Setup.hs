@@ -62,20 +62,24 @@ scoreWidget score =
   -- Process score data into score rendering and midi/highlighting.
   do -- setSData $ SGSettingsDynamic 600  BUG
      scoreData <- drawCanvas score                     -- Widget [ScoreRenderElm]
-     let rndr     = scoreToPics scoreData :: [Picture ()]
-         mgds     = scoreToMGDS scoreData :: MidiHgltDS
-         offsetX  = 30
-         offsetY  = 30
-         scoreCanvasId = "1"
-         hgltCanvasId  = "2"
-         canvasHeight  = 400
-
      -- Initialize dynamic data
      -- canvasWidth <- liftM sgsCanvasWidth (getSData :: Widget SGSettingsDynamic) BUG
      canvasWidth <- liftM (\x->x) (return 500)
 
+     let rndr     = scoreToPics scoreData :: [Picture ()]
+         mgds     = scoreToMGDS scoreData :: MidiHgltDS
+         offsetX  = 30
+         offsetY  = 30
+         scoreCanvasId = "canvas1"
+         hgltCanvasId  = "canvas2"
+         canvasHeight  = 400
+
+
+     do wraw (appCanvas canvasWidth canvasHeight scoreCanvasId hgltCanvasId) `fire` OnClick
+     -- do appCanvas canvasWidth canvasHeight scoreCanvasId hgltCanvasId `pass` OnClick
+
      -- Score canvas
-     wraw (appCanvas canvasWidth canvasHeight scoreCanvasId)
+     center <<< wbutton "delay" "delay"         -- Play button
      Just scoreCanvas <- liftIO $ getCanvasById scoreCanvasId  -- BUG: Handle nothing case
      render scoreCanvas $ do 
        translate (offsetX, offsetY) $ do 
@@ -86,11 +90,13 @@ scoreWidget score =
        -- wraw (scoreCanvas 600 400 hgltCanvasId) `pass` OnClick
        -- Just (x,y) <- liftM clickCoor getEventData   -- BUG: Handle nothing case
        -- wraw $ p << ((show x) ++" "++ (show y))
-     wraw (appCanvas canvasWidth canvasHeight hgltCanvasId)
-     Just hgltCanv <- liftIO $ getCanvasById scoreCanvasId  -- BUG: Handle nothing case
+     -- wraw (appCanvas canvasWidth canvasHeight hgltCanvasId)
+     center <<< wbutton "play" "play"         -- Play button
+     Just hgltCanv <- liftIO $ getCanvasById hgltCanvasId  -- BUG: Handle nothing case
 
      -- **********// Widget Event //**********
-     center <<< wbutton "play" "play"         -- Play button
+     Just (x,y) <- liftM clickCoor getEventData   -- BUG: Handle nothing case
+     wraw $ p << ((show x) ++" "++ (show y))
 
      -- Highlighting
        -- let xAdj = x - (round offsetX)
@@ -114,11 +120,18 @@ scoreWidget score =
              clickCoor d = case evData d of
                             Click _ (x,y) -> Just (x,y)
                             _             -> Nothing
-             appCanvas x y canvasId = (do canvas ! id canvasId
-                                            ! Haste.Perch.style "border: 1px solid black;"
+             appCanvas :: Int -> Int -> String -> String -> Perch 
+             appCanvas x y id1 id2 = do div ! id "canvasesdiv" 
+                                            ! canvasdivStyle x y
+                                            $ noHtml
+                                            `child` (canvasHtml x y id1 1)
+                                            `child` (canvasHtml x y id2 2)
+               where canvasdivStyle x y   = Haste.Perch.style ("position: relative; width: " ++ (show x) ++ "; height: " ++ (show y) ++ ";") 
+                     canvasHtml x y cId z = canvas ! id cId
+                                            ! Haste.Perch.style ("border: 1px solid black; z-index: "++ (show z) ++"; position: absolute; left: 0px; top: 0px;")
                                             ! atr "width" (show x)
                                             ! height (show y)
-                                            $ noHtml)
+                                            $ noHtml
              toHighlight (x:xs) = case x of
                                    GMNoteElm h _ _ -> h : toHighlight xs
                                    GMRestElm h _   -> h : toHighlight xs
