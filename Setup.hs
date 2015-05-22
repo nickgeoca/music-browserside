@@ -8,6 +8,9 @@
 -- Key words: TODO, BUG, NOTE, CONTINUE
 --  $ ==> <$> <*> **> <** ==> <|> ==> <<< -> ++> <++ ==> <<
 
+
+-- TODO: Note/rest highlight regions might need to incorporate the modifiers too. Otherwise one can't select a region by clicking on a clef since that is not a note/rest region. Otherwise treating the clef as a note/rest region would fix the problem.
+
 import Haste
 import Haste.Graphics.Canvas hiding (Ctx, Shape)
 import Haste.Perch hiding (map, head)
@@ -59,12 +62,11 @@ main = do addHeader jsHeader
 
 scoreWidget :: Music -> Widget ()
 scoreWidget score =
-  -- Process score data into score rendering and midi/highlighting.
-  do -- setSData $ SGSettingsDynamic 600  BUG
-     scoreData <- drawCanvas score                     -- Widget [ScoreRenderElm]
-     -- Initialize dynamic data
+  do -- Initialize dynamic data
+     -- setSData $ SGSettingsDynamic 600  BUG
      -- canvasWidth <- liftM sgsCanvasWidth (getSData :: Widget SGSettingsDynamic) BUG
      canvasWidth <- liftM (\x->x) (return 500)
+     scoreData <- drawCanvas score                     -- Widget [ScoreRenderElm]
 
      let rndr     = scoreToPics scoreData :: [Picture ()]
          mgds     = scoreToMGDS scoreData :: MidiHgltDS
@@ -74,43 +76,18 @@ scoreWidget score =
          hgltCanvasId  = "canvas2"
          canvasHeight  = 400
 
-
-     do wraw (appCanvas canvasWidth canvasHeight scoreCanvasId hgltCanvasId) `fire` OnClick
-     -- do appCanvas canvasWidth canvasHeight scoreCanvasId hgltCanvasId `pass` OnClick
-
-     -- Score canvas
-     center <<< wbutton "delay" "delay"         -- Play button
-     Just scoreCanvas <- liftIO $ getCanvasById scoreCanvasId  -- BUG: Handle nothing case
-     render scoreCanvas $ do 
-       translate (offsetX, offsetY) $ do 
-         staffShape (0,0) 100
-         sequence_ rndr  
-
-     -- Highlight canvas
-       -- wraw (scoreCanvas 600 400 hgltCanvasId) `pass` OnClick
-       -- Just (x,y) <- liftM clickCoor getEventData   -- BUG: Handle nothing case
-       -- wraw $ p << ((show x) ++" "++ (show y))
-     -- wraw (appCanvas canvasWidth canvasHeight hgltCanvasId)
-     center <<< wbutton "play" "play"         -- Play button
-     Just hgltCanv <- liftIO $ getCanvasById hgltCanvasId  -- BUG: Handle nothing case
-
      -- **********// Widget Event //**********
+     do (appCanvas (canvasWidth, canvasHeight) (offsetX, offsetY) rndr scoreCanvasId hgltCanvasId) `fire` OnClick
      Just (x,y) <- liftM clickCoor getEventData   -- BUG: Handle nothing case
      wraw $ p << ((show x) ++" "++ (show y))
 
      -- Highlighting
-       -- let xAdj = x - (round offsetX)
-     let xAdj = 30
+     Just hgltCanv <- liftIO $ getCanvasById hgltCanvasId  -- BUG: Handle nothing case
+     let xAdj = x - (round offsetX)
      renderOnTop hgltCanv $ do
        translate (offsetX, offsetY) $ do
          sequence_ $ toHgltPics $ toHighlight $ toList mgds
-{-
-               translate (offsetX, offsetY) $        -- TODO: Use find on different data structure that is more efficient.
-                 case find (pred xAdj) hglt of       -- TODO: Make maybe cleaner here
-                  Just (_,hgltBox) -> do hgltBox
-                  _                -> do return ()
--}
-     
+
      -- Return
      return ()
 
@@ -120,18 +97,6 @@ scoreWidget score =
              clickCoor d = case evData d of
                             Click _ (x,y) -> Just (x,y)
                             _             -> Nothing
-             appCanvas :: Int -> Int -> String -> String -> Perch 
-             appCanvas x y id1 id2 = do div ! id "canvasesdiv" 
-                                            ! canvasdivStyle x y
-                                            $ noHtml
-                                            `child` (canvasHtml x y id1 1)
-                                            `child` (canvasHtml x y id2 2)
-               where canvasdivStyle x y   = Haste.Perch.style ("position: relative; width: " ++ (show x) ++ "; height: " ++ (show y) ++ ";") 
-                     canvasHtml x y cId z = canvas ! id cId
-                                            ! Haste.Perch.style ("border: 1px solid black; z-index: "++ (show z) ++"; position: absolute; left: 0px; top: 0px;")
-                                            ! atr "width" (show x)
-                                            ! height (show y)
-                                            $ noHtml
              toHighlight (x:xs) = case x of
                                    GMNoteElm h _ _ -> h : toHighlight xs
                                    GMRestElm h _   -> h : toHighlight xs
@@ -147,6 +112,27 @@ scoreWidget score =
              toList LTNil = []
              toList (LTList d ds)                         = d : toList ds
              toList (LTTree (Branch l r (LTNode k ds d))) = d : toList ds
+
+appCanvas :: (Int, Int) -> (Double, Double) -> [Picture ()] -> String -> String -> Widget ()
+appCanvas (sizeX,sizeY) (offsetX,offsetY) ps sId hId = 
+  do wraw (do div ! id "canvasesdiv" 
+                   ! canvasdivStyle sizeX sizeY
+                   $ noHtml
+                   `child` (canvasHtml sizeX sizeY sId 1)
+                   `child` (canvasHtml sizeX sizeY hId 2))
+     -- Score canvas
+     -- center <<< wbutton "Draw Score" "Draw Score"         -- Play button
+     Just scoreCanvas <- liftIO $ getCanvasById sId  -- BUG: Handle nothing case
+     render scoreCanvas $ do 
+       translate (offsetX, offsetY) $ do 
+         staffShape (0,0) 100
+         sequence_ ps
+           where canvasdivStyle x y   = Haste.Perch.style ("position: relative; width: " ++ (show x) ++ "; height: " ++ (show y) ++ ";") 
+                 canvasHtml x y cId z = canvas ! id cId
+                                               ! Haste.Perch.style ("border: 1px solid black; z-index: "++ (show z) ++"; position: absolute; left: 0px; top: 0px;")
+                                               ! atr "width" (show x)
+                                               ! height (show y)
+                                               $ noHtml
 
 scoreToPics :: [ScoreRenderElm] -> [Picture ()]
 scoreToPics (x:xs) = case x of
@@ -164,7 +150,7 @@ scoreToPics []     = []
 scoreToMGDS :: [ScoreRenderElm] -> MidiHgltDS
 scoreToMGDS xs = let xs1 = removeRestWhenSameBeatAsNote xs
                      xs2 = toGMList xs1  
-                     ds1 = listToLT xs2
+                     ds1 = createTree xs2 20
                  in ds1
   where toGMList :: [ScoreRenderElm] -> [GraphicMusicElm]
         toGMList (x:xs) = case x of
@@ -174,6 +160,49 @@ scoreToMGDS xs = let xs1 = removeRestWhenSameBeatAsNote xs
           where extract (x:xs) = fst x : extract xs
                 extract []     = []
         toGMList []     = []
+
+createTree :: [GraphicMusicElm] -> Int -> MidiHgltDS
+createTree xs n = let addNodes = dsAddNodes n n (MidiContext 127 60) (BoxCoor 0 0 0 0) 
+                  in dsLinkNodes $ addNodes $ listToLT xs
+
+-- NOTE: This builds a tree for every 20 note/rests. Otherwise it is possible to have conditions where there are 30 modifiers and the key is the same between two tree nodes. Work around is to have a list of modifiers, instead of a modifier element.
+dsAddNodes _ _ midi lastHglt LTNil = LTNil
+dsAddNodes n m midi lastHglt (LTList d ds) =  
+  let newHglt = fromMaybe lastHglt $ getHgltBorder d
+      newMidi = updateMidi midi d
+      m'      = m + if notMidiCtxt d then 1 else 0  -- Here is where skipping is done
+      go      = dsAddNodes n 0 newMidi newHglt (LTList d ds)
+  in if n == m 
+     then LTTree $ Branch Nothing Nothing $ LTNode newHglt go (GMCtxtElm newMidi) -- newMidi isn't needed b/c it will be on next node, but w/e. This is for LTTree case
+     else LTList d $ dsAddNodes n m' newMidi newHglt ds
+
+
+search :: Point -> MidiHgltDS -> Maybe (MidiContext, MidiHgltDS)
+search key ds = search' key ds (MidiContext 127 60)  -- TODO: Make a default midicontext here. Or some alterantive method
+
+-- TODO: Need to pick up the local contexts in this function
+search' :: Point -> MidiHgltDS -> MidiContext -> Maybe (MidiContext, MidiHgltDS)
+search' key (LTTree (Branch _ _(LTNode h ds d))) ctxt = let ctxt' = fromMaybe ctxt (getMidiContext d) 
+                                                        in if pointInBox key h  
+                                                           then Just (ctxt', ds)
+                                                           else search' key ds ctxt'
+search' key (LTList d ds) ctxt = case getHgltBorder d of
+                                  Just h  -> if pointInBox key h  
+                                             then Just (ctxt, ds)
+                                             else search' key ds ctxt
+                                  Nothing ->      search' key ds ctxt
+search' _ LTNil _ = Nothing
+
+pointInBox (x,y) (BoxCoor x1 y1 x2 y2) 
+  = let x' = round x
+        y' = round y
+    in if x' >= x1 && x' < x2 && y' >= y1 && y' < y2 then True else False
+
+dsLinkNodes ds = ds  -- TODO: Needs work
+
+-- BUG: Needs work right here. Instead of updating with context, shoudl be local context.
+updateMidi midi (GMCtxtElm m) = m
+updateMidi midi _             = midi
 
 removeRestWhenSameBeatAsNote x = x        -- BUG: Complete this function.
 
@@ -290,6 +319,15 @@ data GraphicMusicElm = GMNoteElm HgltBorder Position [MidiNote] |
 
 type MidiHgltDS = ListTree HgltBorder GraphicMusicElm
 
+
+getHgltBorder (GMNoteElm h _ _) = Just h
+getHgltBorder (GMRestElm h _  ) = Just h
+getHgltBorder _ = Nothing
+
+getMidiContext (GMNoteElm _ _ _) = Nothing
+getMidiContext (GMRestElm _ _  ) = Nothing
+getMidiContext (GMCtxtElm m) = Just m 
+
 -- type GraphicMusic    = [GraphicMusicElm]
 
 data PlaybackState = PlaybackState {
@@ -298,6 +336,8 @@ data PlaybackState = PlaybackState {
   pbStop :: Bool
   }
 
+notMidiCtxt (GMCtxtElm _) = False
+notMidiCtxt _ = True
 {-
 playMusic ds vol bpm = do concurrent $ do
                             bc <- newEmptyMVar :: MVar BoxCoor
@@ -324,7 +364,8 @@ updCtxt new old = old -- BUG: updating context in playMusic
 
 hgltWhilePlaying hgltCoor =
   do coor <- takeMVar hgltCoor
--}                      
+-}
+
 midiPlayNote :: Int -> MidiContext -> MidiNote -> IO ()
 midiPlayNote chnl (MidiContext vol bpm) (MidiNote dur pitch) -- TODO: bpm integration 
   = let toFlt f a b = f (fromIntegral a) (fromIntegral b) 
