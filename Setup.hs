@@ -8,30 +8,31 @@
 -- Key words: TODO, BUG, NOTE, CONTINUE
 --  $ ==> <$> <*> **> <** ==> <|> ==> <<< -> ++> <++ ==> <<
 
-
+-- NOTE: Worth having highlight region as (coordinates,pic), instead of just the coordinates? Memory vs time trade off. When playing notes, may be better to also include the picture.
 -- TODO: Note/rest highlight regions might need to incorporate the modifiers too. Otherwise one can't select a region by clicking on a clef since that is not a note/rest region. Otherwise treating the clef as a note/rest region would fix the problem.
 
 import Haste
 import Haste.Graphics.Canvas hiding (Ctx, Shape)
 import Haste.Perch hiding (map, head)
-import Prelude hiding(id,div)
+import Haste.Concurrent hiding ((!), Key)
 import Haste.HPlay.View hiding (map, head)
-import GHC.Float
+import Haste.Foreign
+import Haste.Prim (toJSStr)  
 import Data.Ratio
 import Data.Typeable
 import Data.Maybe
--- import Data.Foldable hiding (sequence_, sum)
+import Data.Monoid  
+import Data.List
+import Data.Ord (comparing)
 import Data.Function (on)
-import Control.Monad.IO.Class
-import Haste.Foreign
-import Haste.Prim (toJSStr)
+-- import Data.Foldable hiding (sequence_, sum)
 import System.IO.Unsafe
 import Unsafe.Coerce  
 import Debug.Trace
-import Data.List
-import Data.Ord (comparing)
+import Control.Monad.IO.Class
 import Control.Monad
-import Data.Monoid  
+import Prelude hiding(id,div)
+import GHC.Float
 -- import Music -- BUG
 
 foreign import ccall jsMoveTo :: Ctx -> Double -> Double -> IO ()
@@ -53,9 +54,10 @@ infixr 0 !>
 ----------------------------------------------------------------------------------------------------
 main = do addHeader jsHeader
           runBody $ do
+            center <<< wbutton "delay1" "delay1"
+            liftIO midiLoadPlugin
             center <<< wbutton "render" "render"
-            setTimeout 0 midiLoadPlugin
-            setTimeout 1000 (midiNoteOn 0 50 127 0)
+            liftIO $ midiNoteOn 0 50 127 0
             scoreWidget musicTest
             -- return $ midiPlayNote 0 $ MidiNote 50 127 .25
 
@@ -66,27 +68,33 @@ scoreWidget score =
      -- setSData $ SGSettingsDynamic 600  BUG
      -- canvasWidth <- liftM sgsCanvasWidth (getSData :: Widget SGSettingsDynamic) BUG
      canvasWidth <- liftM (\x->x) (return 500)
-     scoreData <- drawCanvas score                     -- Widget [ScoreRenderElm]
+     scoreData <- drawCanvas score (30,30)                     -- Widget [ScoreRenderElm]  -- TODO: Use offsetX/Y here instead
 
-     let rndr     = scoreToPics scoreData :: [Picture ()]
+     let offsetX  = 30 :: Double
+         offsetY  = 30 :: Double
+         rndr     = scoreToPics scoreData :: [Picture ()]
+--         updData  = map (offsetHglt (offsetX, offsetY)) scoreData
          mgds     = scoreToMGDS scoreData :: MidiHgltDS
-         offsetX  = 30
-         offsetY  = 30
          scoreCanvasId = "canvas1"
          hgltCanvasId  = "canvas2"
          canvasHeight  = 400
 
      -- **********// Widget Event //**********
      do (appCanvas (canvasWidth, canvasHeight) (offsetX, offsetY) rndr scoreCanvasId hgltCanvasId) `fire` OnClick
-     Just (x,y) <- liftM clickCoor getEventData   -- BUG: Handle nothing case
-     wraw $ p << ((show x) ++" "++ (show y))
-
-     -- Highlighting
      Just hgltCanv <- liftIO $ getCanvasById hgltCanvasId  -- BUG: Handle nothing case
+     Just (x,y) <- liftM clickCoor getEventData   -- BUG: Handle nothing case
+     playMusicRegion mgds (x, y) hgltCanv
+
+     wraw $ p << ((show x) ++" "++ (show y))
+     -- wraw $ p << (show $ snd $ search (x,y) mgds) -- CONTINUE: Finish this part for debuing!
+
+     {-
+     -- Highlighting
      let xAdj = x - (round offsetX)
      renderOnTop hgltCanv $ do
        translate (offsetX, offsetY) $ do
          sequence_ $ toHgltPics $ toHighlight $ toList mgds
+     -}
 
      -- Return
      return ()
@@ -104,15 +112,20 @@ scoreWidget score =
              toHighlight [] = []
              toHgltPics xs = let redC  = RGBA 255 0   0 0.3
                                  yelC  = RGBA 255 255 0 0.3
-                             in zipWith rendHighlights (cycle [redC,yelC]) xs
-               where rendHighlights :: Color -> BoxCoor -> Picture ()    
-                     rendHighlights c bc = color c $
-                                           fill $
-                                           do rect (fromIntegral $ x1Coor bc, fromIntegral $ y1Coor bc) (fromIntegral $ x2Coor bc, fromIntegral $ y2Coor bc) 
+                             in zipWith rendHighlight (cycle [redC,yelC]) xs
              toList LTNil = []
              toList (LTList d ds)                         = d : toList ds
              toList (LTTree (Branch l r (LTNode k ds d))) = d : toList ds
-
+{-
+             offsetHglt :: (Double, Double) -> ScoreRenderElm -> ScoreRenderElm
+             offsetHglt xy e = case e of 
+                                ScoreRendNotes h p ls  -> ScoreRendNotes (upd xy h) p ls
+                                ScoreRendRest  h p pic -> ScoreRendRest  (upd xy h) p pic 
+                                ScoreRendMod   p       -> ScoreRendMod   p     
+               where upd (x,y) (BoxCoor x1 y1 x2 y2) = let x' = round x
+                                                           y' = round y 
+                                                       in BoxCoor (x'+x1) (y'+y1) (x'+x2) (y'+y2)
+-}
 appCanvas :: (Int, Int) -> (Double, Double) -> [Picture ()] -> String -> String -> Widget ()
 appCanvas (sizeX,sizeY) (offsetX,offsetY) ps sId hId = 
   do wraw (do div ! id "canvasesdiv" 
@@ -177,11 +190,11 @@ dsAddNodes n m midi lastHglt (LTList d ds) =
      else LTList d $ dsAddNodes n m' newMidi newHglt ds
 
 
-search :: Point -> MidiHgltDS -> Maybe (MidiContext, MidiHgltDS)
+search :: (Int,Int) -> MidiHgltDS -> Maybe (MidiContext, MidiHgltDS)
 search key ds = search' key ds (MidiContext 127 60)  -- TODO: Make a default midicontext here. Or some alterantive method
 
 -- TODO: Need to pick up the local contexts in this function
-search' :: Point -> MidiHgltDS -> MidiContext -> Maybe (MidiContext, MidiHgltDS)
+search' :: (Int,Int) -> MidiHgltDS -> MidiContext -> Maybe (MidiContext, MidiHgltDS)
 search' key (LTTree (Branch _ _(LTNode h ds d))) ctxt = let ctxt' = fromMaybe ctxt (getMidiContext d) 
                                                         in if pointInBox key h  
                                                            then Just (ctxt', ds)
@@ -193,10 +206,8 @@ search' key (LTList d ds) ctxt = case getHgltBorder d of
                                   Nothing ->      search' key ds ctxt
 search' _ LTNil _ = Nothing
 
-pointInBox (x,y) (BoxCoor x1 y1 x2 y2) 
-  = let x' = round x
-        y' = round y
-    in if x' >= x1 && x' < x2 && y' >= y1 && y' < y2 then True else False
+pointInBox (x,y) (BoxCoor x1 y1 x2 y2) =
+  if x >= x1 && x < x2 && y >= y1 && y < y2 then True else False
 
 dsLinkNodes ds = ds  -- TODO: Needs work
 
@@ -205,6 +216,11 @@ updateMidi midi (GMCtxtElm m) = m
 updateMidi midi _             = midi
 
 removeRestWhenSameBeatAsNote x = x        -- BUG: Complete this function.
+
+rendHighlight :: Color -> BoxCoor -> Picture ()    
+rendHighlight c bc = color c $ fill $
+                      do rect (fromIntegral $ x1Coor bc, fromIntegral $ y1Coor bc) 
+                              (fromIntegral $ x2Coor bc, fromIntegral $ y2Coor bc) 
 
 ----------------------------------------------------------------------------------------------------                      
 -- Old Graphics (still sort of used)
@@ -275,6 +291,12 @@ listToLT :: [a] -> ListTree key a
 listToLT []     = LTNil
 listToLT (x:xs) = LTList x (listToLT xs)
 
+getLTDataRestMaybe ds = 
+  case ds of
+   LTNil                                -> Nothing
+   LTList d ds'                         -> Just (d,ds') 
+   LTTree (Branch _ _ (LTNode _ ds' d)) -> Just (d,ds')
+
 {-              
 -- NOTE: Should this be strict?
 instance Foldable (ListTree HgltBorder) where
@@ -338,40 +360,54 @@ data PlaybackState = PlaybackState {
 
 notMidiCtxt (GMCtxtElm _) = False
 notMidiCtxt _ = True
-{-
-playMusic ds vol bpm = do concurrent $ do
-                            bc <- newEmptyMVar :: MVar BoxCoor
-                            setSData $ vol bpm False
-                            forkIO $ hgltWhilePlaying bc
-                            playMusic' (MidiContext vol bpm) ds bc
 
--- TODO!!!!!!!!!!!!! Use CIO here                       
--- playMusic' :: MidiContext -> MidiHgltDS -> IO ()
-playMusic' ctxt0 lt hgltCoor =
-  do state <- getSData
-     guard $ pbStop state
-     -- TODO: Clear midi buffer?
-     let ctxt1 = ctxt0 {mVol = pbVol state, mBpm = pbBpm state}
-     case lt of
-      LTTree (Branch l r d) -> do playMusic (updCtxt (gmtMidiCtxt d) ctxt1) (gmtGM d) hgltCoor
-      LTList e xs           -> case e of
-        GMNoteElm pos ns       -> do putMVar (BoxCoor 0 0 30 30)
-                                     mapM (midiPlayNote 0 ctxt1) ns
-                                     playMusic ctxt xs hgltCoor
-      LTNil                 -> return ()
 
-updCtxt new old = old -- BUG: updating context in playMusic
 
-hgltWhilePlaying hgltCoor =
-  do coor <- takeMVar hgltCoor
--}
+-- playMusicRegion :: MidiHgltDS -> (Int, Int) -> Widget ()
+-- playMusicRegion ds xy = playMusic ds $ MidiContext 127 60
+ --BUG: Add the comment back in
+playMusicRegion :: MidiHgltDS -> (Int, Int) -> Canvas -> Widget ()
+playMusicRegion ds xy hgltCanv = -- playMusic ds $ MidiContext 127 60
+  case search xy ds of  
+   Just (ctxt, ds') -> do liftIO $ concurrent $ do hgltInfo <- newEmptyMVar
+                                                   forkIO $ hgltNotesRests hgltCanv hgltInfo
+                                                   playMusic hgltInfo ds' ctxt
+   Nothing          -> return ()
 
-midiPlayNote :: Int -> MidiContext -> MidiNote -> IO ()
-midiPlayNote chnl (MidiContext vol bpm) (MidiNote dur pitch) -- TODO: bpm integration 
-  = let toFlt f a b = f (fromIntegral a) (fromIntegral b) 
-        durFlt = (toFlt (/) 60  bpm) * (toFlt (/) (numerator dur) (denominator dur))
-    in do midiNoteOn  chnl pitch vol 0
-          midiNoteOff chnl pitch durFlt
+-- playMusic :: MidiHgltDS -> MidiContext -> Widget ()
+playMusic hgltInfo ds ctxt = 
+  case getLTDataRestMaybe ds of
+   Just (d', ds') -> do ctxt' <- playHgltUpd hgltInfo ctxt d'
+                        playMusic hgltInfo ds' ctxt'
+   Nothing        -> do putMVar hgltInfo (False, BoxCoor 0 0 0 0) 
+                        return ()
+
+-- TODO: 1) Add delay between notes 2) Factor in bpm change and delay (absolute time stamp changes if bpm changes) 3) highlight on/off 4) Concurrency
+-- playHgltUpd :: MidiContext -> GraphicMusicElm -> Widget MidiContext
+playHgltUpd hgltInfo ctxt d = 
+  case d of
+   GMNoteElm h p ns -> do wait 250
+                          liftIO $ midiPlayNotes 0 ctxt ns   -- NOTE: Might be faster to noteOn all notes, then noteOff them, instead of alternating
+                          Just hgltCanv <- liftIO $ getCanvasById "canvas2"  -- BUG: Handle nothing case
+                          renderOnTop hgltCanv $ rendHighlight (RGBA 255 0 0 0.3) h
+                          putMVar hgltInfo (True, h) 
+                          return ctxt
+   GMRestElm h p    -> do wait 250
+                          putMVar hgltInfo (True, h)  -- TODO: Make this maybe type
+                          return ctxt
+   GMCtxtElm ctxt'  -> return ctxt'
+
+hgltNotesRests hgltCanv mHgltInfo = 
+  do -- hgltOld <- newMVar $ BoxCoor 0 0 0 0 
+     go hgltCanv mHgltInfo 
+       where go hgltCanv mHgltInfo = 
+               do (exit, hgltNew) <- takeMVar mHgltInfo
+                  -- hgltOld         <- takeMVar mHgltOld
+                  -- putMVar mHgltOld hgltNew
+                  if exit then return () else -- NOTE: Not exactally sure if guard stops parallel thread
+                    do renderOnTop hgltCanv $ rendHighlight (RGBA 255 0 0 0.3) hgltNew
+                       -- renderOnTop hgltCanv $ rendHighlight (RGBA 0   0 0 0.3) hgltOld
+                       go hgltCanv mHgltInfo
 
 
 ----------------------------------------------------------------------------------------------------                      
@@ -493,7 +529,7 @@ sUpdAnnoDx a = do s <- getSData
                                , sYPos = y'
                                }
                   -- Return coordinates for highlighting box
-                  return $ BoxCoor (round x1') (round y') (round x2') (round (y' + staffLineDy gSGS))
+                  return $ BoxCoor (round x1') (round y') (round x2') (round (y' + measureHeight gSGS))
 
 -- sUpdPos       p = do s <- getSData ; setSData $ s {sPos   = (sPos   s) + p}              
 -- Update dx following parallel notes of same duration.
@@ -518,9 +554,9 @@ noteRule1 ns = let n' = groupBy (\x y -> if dur x == dur y then True else False)
                               return $ join vss
 -}                   
              
-drawCanvas :: Music -> Widget [ScoreRenderElm]   
-drawCanvas m = do setSData $ RendState 0 0 (Clef NoneClef 0 0) (Main.Key 0 Major) (Timing 4 4 Nothing)   -- TODO: create monad function then map over it. Default state of clef is "none" clef
-                  drawCanvas' m
+drawCanvas :: Music -> (Double, Double) -> Widget [ScoreRenderElm]   
+drawCanvas m (x,y) = do setSData $ RendState x y (Clef NoneClef 0 0) (Main.Key 0 Major) (Timing 4 4 Nothing)   -- TODO: create monad function then map over it. Default state of clef is "none" clef
+                        drawCanvas' m
 
 -- BUG: Note rendering rule is wrong. Diff duration should be on same dx if not adjacent. Exception being end of note?
 drawCanvas' :: Music -> Widget [ScoreRenderElm]                  
@@ -582,7 +618,7 @@ modifiersToGraphics e = do
 typeWriterFn :: Double -> Double -> Double -> Widget ((Double, Double), Double)
 typeWriterFn x dx y = do -- canvasWidth <- liftM sgsCanvasWidth (getSData :: Widget SGSettingsDynamic) -- BUG
                          canvasWidth <- liftM (\x->x) (return 600)
-                         let dy   = staffLineDy gSGS
+                         let dy   = measureHeight gSGS
                              nwln = x + dx > canvasWidth
                              -- 
                              y'   = if nwln then y + dy else y
@@ -622,6 +658,25 @@ musicTest = [ (0 % 1,ModElm [ ClefSym (Clef {clefsign = GClef, clefline = 2, cle
 ----------------------------------------------------------------------------------------------------                      
 -- Javascript API
 ----------------------------------------------------------------------------------------------------
+midiPlayNote :: Int -> MidiContext -> MidiNote -> IO ()
+midiPlayNote chnl (MidiContext vol bpm) (MidiNote dur pitch) -- TODO: dynamic bpm integration 
+  = let toFlt f a b = f (fromIntegral a) (fromIntegral b) 
+        durFlt = (toFlt (/) 60  bpm) * (toFlt (/) (numerator dur) (denominator dur))
+    in do midiNoteOn  chnl pitch vol 0  -- TODO: Add delay before this line of code!
+          midiNoteOff chnl pitch durFlt
+
+
+midiPlayNotes :: Int -> MidiContext -> [MidiNote] -> IO ()  -- NOTE: This function is going to need additional work. Such as notes on same beat, but different volume.
+midiPlayNotes chnl (MidiContext vol bpm) ns -- TODO: dynamic bpm integration 
+  = let playData = toPlayData ns bpm -- TODO: Make playData variable strict to improve latency
+    in do mapM (\(d,p) -> do midiNoteOn  chnl p vol 0) playData  -- TODO: Add delay before this line of code!
+          mapM (\(d,p) -> do midiNoteOff chnl p d)     playData
+          return ()
+            where toPlayData :: [MidiNote] -> Int -> [(Float, Int)]
+                  toPlayData ((MidiNote d p):ns) bpm = (durFlt d bpm, p) : toPlayData ns bpm
+                  toPlayData [] _ = []
+                  toFlt f a b = f (fromIntegral a) (fromIntegral b) 
+                  durFlt dur bpm = (toFlt (/) 60  bpm) * (toFlt (/) (numerator dur) (denominator dur))
 
 midiLoadPlugin :: IO ()
 midiLoadPlugin
