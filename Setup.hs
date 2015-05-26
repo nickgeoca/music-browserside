@@ -57,7 +57,6 @@ main = do addHeader jsHeader
             center <<< wbutton "delay1" "delay1"
             liftIO midiLoadPlugin
             center <<< wbutton "render" "render"
-            liftIO $ midiNoteOn 0 50 127 0
             scoreWidget musicTest
             -- return $ midiPlayNote 0 $ MidiNote 50 127 .25
 
@@ -68,9 +67,9 @@ scoreWidget score =
      -- setSData $ SGSettingsDynamic 600  BUG
      -- canvasWidth <- liftM sgsCanvasWidth (getSData :: Widget SGSettingsDynamic) BUG
      canvasWidth <- liftM (\x->x) (return 500)
-     scoreData <- drawCanvas score (30,30)                     -- Widget [ScoreRenderElm]  -- TODO: Use offsetX/Y here instead
+     scoreData <- drawCanvas score (0,30)                     -- Widget [ScoreRenderElm]  -- TODO: Use offsetX/Y here instead
 
-     let offsetX  = 30 :: Double
+     let offsetX  = 0 :: Double
          offsetY  = 30 :: Double
          rndr     = scoreToPics scoreData :: [Picture ()]
 --         updData  = map (offsetHglt (offsetX, offsetY)) scoreData
@@ -79,22 +78,15 @@ scoreWidget score =
          hgltCanvasId  = "canvas2"
          canvasHeight  = 400
 
-     -- **********// Widget Event //**********
      do (appCanvas (canvasWidth, canvasHeight) (offsetX, offsetY) rndr scoreCanvasId hgltCanvasId) `fire` OnClick
+     -- **********// Widget Event //**********
      Just hgltCanv <- liftIO $ getCanvasById hgltCanvasId  -- BUG: Handle nothing case
      Just (x,y) <- liftM clickCoor getEventData   -- BUG: Handle nothing case
      playMusicRegion mgds (x, y) hgltCanv
 
-     wraw $ p << ((show x) ++" "++ (show y))
-     -- wraw $ p << (show $ snd $ search (x,y) mgds) -- CONTINUE: Finish this part for debuing!
-
-     {-
-     -- Highlighting
-     let xAdj = x - (round offsetX)
-     renderOnTop hgltCanv $ do
-       translate (offsetX, offsetY) $ do
-         sequence_ $ toHgltPics $ toHighlight $ toList mgds
-     -}
+     -- wraw $ p << ((show x) ++" "++ (show y))
+     -- let Just (_,mgds') = search (x,y) mgds 
+     -- wraw $ p << (fmap show mgds')
 
      -- Return
      return ()
@@ -125,6 +117,15 @@ scoreWidget score =
                where upd (x,y) (BoxCoor x1 y1 x2 y2) = let x' = round x
                                                            y' = round y 
                                                        in BoxCoor (x'+x1) (y'+y1) (x'+x2) (y'+y2)
+
+     {-
+     -- Highlighting
+     let xAdj = x - (round offsetX)
+     renderOnTop hgltCanv $ do
+       translate (offsetX, offsetY) $ do
+         sequence_ $ toHgltPics $ toHighlight $ toList mgds
+     -}
+
 -}
 appCanvas :: (Int, Int) -> (Double, Double) -> [Picture ()] -> String -> String -> Widget ()
 appCanvas (sizeX,sizeY) (offsetX,offsetY) ps sId hId = 
@@ -221,7 +222,10 @@ rendHighlight :: Color -> BoxCoor -> Picture ()
 rendHighlight c bc = color c $ fill $
                       do rect (fromIntegral $ x1Coor bc, fromIntegral $ y1Coor bc) 
                               (fromIntegral $ x2Coor bc, fromIntegral $ y2Coor bc) 
-
+-- removeHighlight :: Color -> BoxCoor -> Picture ()    
+removeHighlight canv bc = render canv $ fill $     -- TODO: Use js clearRect() instead
+                      do rect (0, 0) 
+                              (0, 0) 
 ----------------------------------------------------------------------------------------------------                      
 -- Old Graphics (still sort of used)
 ----------------------------------------------------------------------------------------------------  
@@ -246,7 +250,7 @@ data ScoreGraphicSettings = ScoreGraphicSettings
 gSGS = ScoreGraphicSettings 10 5 40
 
 -- qN
-qnShape (x,y) = fill $ do circle (x,y) (qnSize gSGS); line (x-29,y-50) (x+20,y+20)
+qnShape (x,y) = fill $ do circle (x,y) (qnSize gSGS); -- line (x-29,y-50) (x+20,y+20)
 
 musDur n d = n % d :: Ratio Int -- % :: Integral a => a -> a -> Ratio a infixl 7
 ----------------------------------------------------------------------------------------------------                      
@@ -261,7 +265,7 @@ data ScoreRenderElm = ScoreRendNotes HgltBorder Position    [(MidiNote, Picture 
 data BoxCoor = BoxCoor {
   x1Coor :: Int, y1Coor :: Int,
   x2Coor :: Int, y2Coor :: Int
-  }  
+  } deriving (Show,Read)
 
 type HgltBorder = BoxCoor
 
@@ -297,7 +301,7 @@ getLTDataRestMaybe ds =
    LTList d ds'                         -> Just (d,ds') 
    LTTree (Branch _ _ (LTNode _ ds' d)) -> Just (d,ds')
 
-{-              
+{-
 -- NOTE: Should this be strict?
 instance Foldable (ListTree HgltBorder) where
   foldMap f LTNil         = mempty
@@ -309,14 +313,14 @@ instance Foldable (ListTree HgltBorder) where
           go (LTList d ds) = d `f` go ds 
           go (LTTree (Branch l r (LTNode k ds d)))
                            = d 'f' go ds 
-
+-}
 
 instance Functor (ListTree HgltBorder) where
-  fmap f LTNil         = LTNil
+  fmap f LTNil         = LTNil   -- TODO: Rebuild tree here?
   fmap f (LTList d ds) = LTList (f d) (fmap f ds)
-  fmap f (LTTree (Branch l r (LTNode k ds          d)))
-        = LTTree (Branch l r (LTNode k (fmap f ds) (f d)))
--}
+  fmap f (LTTree (Branch l r (LTNode k  ds          d   )))
+       = (LTTree (Branch Nothing Nothing (LTNode k (fmap f ds) (f d))))
+
 
 ----------------------------------------------------------------------------------------------------                      
 -- Graphic/Midi Types
@@ -337,7 +341,7 @@ data MidiContext = MidiContext {
 
 data GraphicMusicElm = GMNoteElm HgltBorder Position [MidiNote] |
                        GMRestElm HgltBorder Position            |
-                       GMCtxtElm MidiContext
+                       GMCtxtElm MidiContext deriving (Show, Read)
 
 type MidiHgltDS = ListTree HgltBorder GraphicMusicElm
 
@@ -379,7 +383,7 @@ playMusic hgltInfo ds ctxt =
   case getLTDataRestMaybe ds of
    Just (d', ds') -> do ctxt' <- playHgltUpd hgltInfo ctxt d'
                         playMusic hgltInfo ds' ctxt'
-   Nothing        -> do putMVar hgltInfo (False, BoxCoor 0 0 0 0) 
+   Nothing        -> do putMVar hgltInfo (True, BoxCoor 0 0 0 0) 
                         return ()
 
 -- TODO: 1) Add delay between notes 2) Factor in bpm change and delay (absolute time stamp changes if bpm changes) 3) highlight on/off 4) Concurrency
@@ -388,26 +392,27 @@ playHgltUpd hgltInfo ctxt d =
   case d of
    GMNoteElm h p ns -> do wait 250
                           liftIO $ midiPlayNotes 0 ctxt ns   -- NOTE: Might be faster to noteOn all notes, then noteOff them, instead of alternating
-                          Just hgltCanv <- liftIO $ getCanvasById "canvas2"  -- BUG: Handle nothing case
-                          renderOnTop hgltCanv $ rendHighlight (RGBA 255 0 0 0.3) h
-                          putMVar hgltInfo (True, h) 
+                          putMVar hgltInfo (False, h) 
                           return ctxt
    GMRestElm h p    -> do wait 250
-                          putMVar hgltInfo (True, h)  -- TODO: Make this maybe type
+                          putMVar hgltInfo (False, h)  -- TODO: Make this maybe type
                           return ctxt
    GMCtxtElm ctxt'  -> return ctxt'
 
+hgltNotesRests :: Canvas -> MVar (Bool, HgltBorder) -> CIO ()
 hgltNotesRests hgltCanv mHgltInfo = 
-  do -- hgltOld <- newMVar $ BoxCoor 0 0 0 0 
-     go hgltCanv mHgltInfo 
-       where go hgltCanv mHgltInfo = 
+  do mHgltOld <- newMVar $ BoxCoor 0 0 0 0 
+     go hgltCanv mHgltInfo mHgltOld 
+       where go hgltCanv mHgltInfo mHgltOld = 
                do (exit, hgltNew) <- takeMVar mHgltInfo
-                  -- hgltOld         <- takeMVar mHgltOld
-                  -- putMVar mHgltOld hgltNew
-                  if exit then return () else -- NOTE: Not exactally sure if guard stops parallel thread
-                    do renderOnTop hgltCanv $ rendHighlight (RGBA 255 0 0 0.3) hgltNew
-                       -- renderOnTop hgltCanv $ rendHighlight (RGBA 0   0 0 0.3) hgltOld
-                       go hgltCanv mHgltInfo
+                  hgltOld         <- takeMVar mHgltOld
+                  putMVar mHgltOld hgltNew
+                  if exit 
+                    then do removeHighlight hgltCanv hgltOld 
+                            return () 
+                    else do removeHighlight hgltCanv hgltOld 
+                            renderOnTop hgltCanv $ rendHighlight (RGBA 255 0 0 0.3) hgltNew
+                            go hgltCanv mHgltInfo mHgltOld
 
 
 ----------------------------------------------------------------------------------------------------                      
@@ -472,9 +477,12 @@ instance ToPict Main.Key where
   toPic k (x,y) = fill $ do rect (x,y) (dimensions keyAnno)
 
 instance ToPict Timing where
-  toPic t (x,y) = let x' = x + 10 -- (fst $ dimensions timingAnno) 
-                      y' = y + 10 -- (snd $ dimensions timingAnno) 
-                  in fill $ do rect (x/5,y/5) (dimensions keyAnno) -- fill $ do (unsafeCoerce quadraticCurve) (x,y) (x',y') (x,y') -- fill $ do rect (x,y) (dimensions timingAnno)
+  toPic t (x,y) = fill $ do rect (x,y) (dimensions timingAnno)
+{-
+  toPic t (x,y) = let x' = (fst $ dimensions timingAnno) 
+                      y' = (snd $ dimensions timingAnno) 
+                  in fill $ do (unsafeCoerce quadraticCurve) (x,y) (x',y') (x,y') 
+-}
 
 clefDy c = 15   -- BUG
 keyDy c = 15   -- BUG
@@ -564,10 +572,10 @@ drawCanvas' [] = return []
 drawCanvas' ((pos, elm): mus) =
   do state <- (getSData :: Widget RendState) 
      r <- case elm of  
-           NoteElm ns -> do hglt <- sUpdAnnoDx noteAnno  -- Update state first, so don't grab anything after!
-                            pics <- mapM notesToGraphics $ zip (cycle [0]) ns
+           NoteElm ns -> do pics <- mapM notesToGraphics $ zip (cycle [0]) ns
                             let midinotes = map forward ns
                                 midiPics  = zip midinotes pics
+                            hglt <- sUpdAnnoDx noteAnno  -- NOTE: This should be last line of monad code! (beside return)
                             return $ [ScoreRendNotes hglt pos midiPics]
            RestElm r  -> do return []    -- BUG: Update Rest Element in drawCanvas'
            ModElm  m  -> do mapM modifiersToGraphics m
@@ -576,7 +584,6 @@ drawCanvas' ((pos, elm): mus) =
 instance ConvertBothWay MidiNote Note where
   forward note = MidiNote (dur note) (pitch note)
 
-               
 notesAdjacent k n1 n2 = let fifths = keyfifths k
                             mode   = keymode k
                         in if (semiStepsToSteps (pitch n1) (pitch n2)) <= 1 
@@ -617,7 +624,7 @@ modifiersToGraphics e = do
 
 typeWriterFn :: Double -> Double -> Double -> Widget ((Double, Double), Double)
 typeWriterFn x dx y = do -- canvasWidth <- liftM sgsCanvasWidth (getSData :: Widget SGSettingsDynamic) -- BUG
-                         canvasWidth <- liftM (\x->x) (return 600)
+                         canvasWidth <- liftM (\x->x) (return 500)
                          let dy   = measureHeight gSGS
                              nwln = x + dx > canvasWidth
                              -- 
@@ -630,20 +637,47 @@ typeWriterFn x dx y = do -- canvasWidth <- liftM sgsCanvasWidth (getSData :: Wid
 -- Examples
 ----------------------------------------------------------------------------------------------------  
 musicTest :: Music       
-musicTest = [ (0 % 1,ModElm [ ClefSym (Clef {clefsign = GClef, clefline = 2, clefoctalt = 0})
+musicTest = [ {- (0 % 1,ModElm [ ClefSym (Clef {clefsign = GClef, clefline = 2, clefoctalt = 0})
                             , KeySym (Main.Key {keyfifths = 0, keymode = Major})
                             , TimingSym (Timing 4 4 (Just TimeCommon))
-                            ])
-            , (0 % 1,NoteElm [ (Note {dur = 1 % 4, pitch = 53, mods = []})
+                            ]) -}
+              (0 % 1,NoteElm [ (Note {dur = 1 % 4, pitch = 53, mods = []})
                              , (Note {dur = 1 % 4, pitch = 55, mods = []})])
             , (1 % 4,NoteElm [ (Note {dur = 1 % 4, pitch = 55, mods = []})])
             , (1 % 2,NoteElm [ (Note {dur = 1 % 4, pitch = 57, mods = []})])
             , (3 % 4,NoteElm [ (Note {dur = 1 % 4, pitch = 59, mods = []})])
-            , (1 % 1,ModElm  [ TimingSym (Timing 4 4 (Just TimeCommon))])
+--             , (1 % 1,ModElm  [ TimingSym (Timing 4 4 (Just TimeCommon))])
             , (1 % 1,NoteElm [ (Note {dur = 1 % 4, pitch = 48, mods = []})])
             , (5 % 4,NoteElm [ (Note {dur = 1 % 4, pitch = 50, mods = []})])
             , (3 % 2,NoteElm [ (Note {dur = 1 % 4, pitch = 52, mods = []})])
             , (7 % 4,NoteElm [ (Note {dur = 1 % 4, pitch = 53, mods = []})])
+-- {-
+            , (8 % 4,NoteElm [ (Note {dur = 1 % 4, pitch = 55, mods = []})])
+            , (9 % 4,NoteElm [ (Note {dur = 1 % 4, pitch = 57, mods = []})])
+            , (10% 4,NoteElm [ (Note {dur = 1 % 4, pitch = 59, mods = []})])
+            , (11% 4,NoteElm [ (Note {dur = 1 % 4, pitch = 48, mods = []})])
+            , (12% 4,NoteElm [ (Note {dur = 1 % 4, pitch = 50, mods = []})])
+            , (13% 4,NoteElm [ (Note {dur = 1 % 4, pitch = 52, mods = []})])
+            , (14% 4,NoteElm [ (Note {dur = 1 % 4, pitch = 53, mods = []})])
+            , (15% 4,NoteElm [ (Note {dur = 1 % 4, pitch = 55, mods = []})])
+            , (16% 4,NoteElm [ (Note {dur = 1 % 4, pitch = 57, mods = []})])
+            , (17% 4,NoteElm [ (Note {dur = 1 % 4, pitch = 59, mods = []})])
+            , (18% 4,NoteElm [ (Note {dur = 1 % 4, pitch = 48, mods = []})])
+            , (19% 4,NoteElm [ (Note {dur = 1 % 4, pitch = 50, mods = []})])
+            , (20% 4,NoteElm [ (Note {dur = 1 % 4, pitch = 52, mods = []})])
+            , (21% 4,NoteElm [ (Note {dur = 1 % 4, pitch = 30, mods = []})])
+            , (22% 4,NoteElm [ (Note {dur = 1 % 4, pitch = 53, mods = []})])
+            , (23% 4,NoteElm [ (Note {dur = 1 % 4, pitch = 53, mods = []})])
+            , (24% 4,NoteElm [ (Note {dur = 1 % 4, pitch = 53, mods = []})])
+            , (25% 4,NoteElm [ (Note {dur = 1 % 4, pitch = 55, mods = []})])
+            , (26% 4,NoteElm [ (Note {dur = 1 % 4, pitch = 57, mods = []})])
+            , (27% 4,NoteElm [ (Note {dur = 1 % 4, pitch = 59, mods = []})])
+            , (28% 4,NoteElm [ (Note {dur = 1 % 4, pitch = 48, mods = []})])
+            , (29% 4,NoteElm [ (Note {dur = 1 % 4, pitch = 50, mods = []})])
+            , (30% 4,NoteElm [ (Note {dur = 1 % 4, pitch = 52, mods = []})])
+            , (31% 4,NoteElm [ (Note {dur = 1 % 4, pitch = 30, mods = []})])
+
+-- -}
             ]
             
                        
