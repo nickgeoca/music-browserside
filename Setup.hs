@@ -11,7 +11,7 @@
 -- NOTE: Worth having highlight region as (coordinates,pic), instead of just the coordinates? Memory vs time trade off. When playing notes, may be better to also include the picture.
 -- TODO: Note/rest highlight regions might need to incorporate the modifiers too. Otherwise one can't select a region by clicking on a clef since that is not a note/rest region. Otherwise treating the clef as a note/rest region would fix the problem.
 
-import Haste
+import Haste hiding (Canvas)
 import Haste.Graphics.Canvas hiding (Ctx, Shape)
 import Haste.Perch hiding (map, head)
 import Haste.Concurrent hiding ((!), Key)
@@ -31,19 +31,21 @@ import Unsafe.Coerce
 import Debug.Trace
 import Control.Monad.IO.Class
 import Control.Monad
+import Control.Exception (evaluate)
 import Prelude hiding(id,div)
 import GHC.Float
 -- import Music -- BUG
 
+foreign import ccall jsClearRect :: Ctx -> Int -> Int -> Int -> Int -> IO ()
 foreign import ccall jsMoveTo :: Ctx -> Double -> Double -> IO ()
 foreign import ccall jsQuadraticCurveTo :: Ctx -> Double -> Double -> Double -> Double -> IO ()
 foreign import ccall jsMidiLoadPlugin :: IO ()
 foreign import ccall jsMidiNoteOn :: Int -> Int -> Int -> Float -> IO ()
 foreign import ccall jsMidiNoteOff :: Int -> Int -> Float -> IO ()
+foreign import ccall jsPerformanceNow :: IO Double
 
 newtype Ctx = Ctx JSAny                   -- TODO: Should be in library
             deriving (Pack, Unpack)
-
 newtype Shape a = Shape {unS :: Ctx -> IO a} -- TODO: Should be in library
 
 (!>) = flip trace
@@ -223,9 +225,10 @@ rendHighlight c bc = color c $ fill $
                       do rect (fromIntegral $ x1Coor bc, fromIntegral $ y1Coor bc) 
                               (fromIntegral $ x2Coor bc, fromIntegral $ y2Coor bc) 
 -- removeHighlight :: Color -> BoxCoor -> Picture ()    
-removeHighlight canv bc = render canv $ fill $     -- TODO: Use js clearRect() instead
-                      do rect (0, 0) 
-                              (0, 0) 
+removeHighlight canv (BoxCoor x1 y1 x2 y2) = clearRect canv x1 y1 (x2-x1) (y2-y1)
+-- render canv $ fill $     -- TODO: Use js clearRect() instead
+--                      do rect (0, 0) 
+--                              (0, 0) 
 ----------------------------------------------------------------------------------------------------                      
 -- Old Graphics (still sort of used)
 ----------------------------------------------------------------------------------------------------  
@@ -383,15 +386,15 @@ playMusic hgltInfo ds ctxt =
   case getLTDataRestMaybe ds of
    Just (d', ds') -> do ctxt' <- playHgltUpd hgltInfo ctxt d'
                         playMusic hgltInfo ds' ctxt'
-   Nothing        -> do putMVar hgltInfo (True, BoxCoor 0 0 0 0) 
+   Nothing        -> do putMVar hgltInfo (True, BoxCoor 0 0 0 0) -- BUG: There needs to be delay here somehow. Otherwise the last note does not get highlighted.
                         return ()
 
 -- TODO: 1) Add delay between notes 2) Factor in bpm change and delay (absolute time stamp changes if bpm changes) 3) highlight on/off 4) Concurrency
 -- playHgltUpd :: MidiContext -> GraphicMusicElm -> Widget MidiContext
 playHgltUpd hgltInfo ctxt d = 
   case d of
-   GMNoteElm h p ns -> do wait 250
-                          liftIO $ midiPlayNotes 0 ctxt ns   -- NOTE: Might be faster to noteOn all notes, then noteOff them, instead of alternating
+   GMNoteElm h p ns -> do t <- liftIO $ liftM (250+) getTimeNow
+                          midiPlayNotes t 0 ctxt ns   -- NOTE: Might be faster to noteOn all notes, then noteOff them, instead of alternating
                           putMVar hgltInfo (False, h) 
                           return ctxt
    GMRestElm h p    -> do wait 250
@@ -408,10 +411,10 @@ hgltNotesRests hgltCanv mHgltInfo =
                   hgltOld         <- takeMVar mHgltOld
                   putMVar mHgltOld hgltNew
                   if exit 
-                    then do removeHighlight hgltCanv hgltOld 
+                    then do liftIO $ removeHighlight hgltCanv hgltOld 
                             return () 
-                    else do removeHighlight hgltCanv hgltOld 
-                            renderOnTop hgltCanv $ rendHighlight (RGBA 255 0 0 0.3) hgltNew
+                    else do liftIO $ removeHighlight hgltCanv hgltOld 
+                            liftIO $ renderOnTop hgltCanv $ rendHighlight (RGBA 255 0 0 0.3) hgltNew
                             go hgltCanv mHgltInfo mHgltOld
 
 
@@ -700,17 +703,43 @@ midiPlayNote chnl (MidiContext vol bpm) (MidiNote dur pitch) -- TODO: dynamic bp
           midiNoteOff chnl pitch durFlt
 
 
-midiPlayNotes :: Int -> MidiContext -> [MidiNote] -> IO ()  -- NOTE: This function is going to need additional work. Such as notes on same beat, but different volume.
-midiPlayNotes chnl (MidiContext vol bpm) ns -- TODO: dynamic bpm integration 
-  = let playData = toPlayData ns bpm -- TODO: Make playData variable strict to improve latency
-    in do mapM (\(d,p) -> do midiNoteOn  chnl p vol 0) playData  -- TODO: Add delay before this line of code!
-          mapM (\(d,p) -> do midiNoteOff chnl p d)     playData
-          return ()
-            where toPlayData :: [MidiNote] -> Int -> [(Float, Int)]
-                  toPlayData ((MidiNote d p):ns) bpm = (durFlt d bpm, p) : toPlayData ns bpm
-                  toPlayData [] _ = []
-                  toFlt f a b = f (fromIntegral a) (fromIntegral b) 
-                  durFlt dur bpm = (toFlt (/) 60  bpm) * (toFlt (/) (numerator dur) (denominator dur))
+-- TODO: Make this a multi channel function for the sake of reducing latency
+midiPlayNotes :: Double -> Int -> MidiContext -> [MidiNote] -> CIO ()  -- NOTE: This function is going to need additional work. Such as notes on same beat, but different volume.
+midiPlayNotes t chnl (MidiContext vol bpm) ns -- TODO: dynamic bpm integration 
+  = do playData  <- liftIO $ evaluate $ toPlayData ns bpm   -- Reduce latency. evaluate forces it to weak head normal form
+       playNotes <- liftIO $ evaluate $ map (\(d,p) -> do midiNoteOn  chnl p vol 0) playData
+       stopNotes <- liftIO $ evaluate $ map (\(d,p) -> do midiNoteOff chnl p d)     playData
+       t'        <- liftIO $ evaluate t
+
+       usecWait t'
+       liftIO $ sequence_ playNotes
+       liftIO $ sequence_ stopNotes
+       return ()
+
+         where toPlayData :: [MidiNote] -> Int -> [(Float, Int)]
+               toPlayData ((MidiNote d p):ns) bpm = (durFlt d bpm, p) : toPlayData ns bpm
+               toPlayData [] _ = []
+               toFlt f a b = f (fromIntegral a) (fromIntegral b) 
+               durFlt :: Ratio Int -> Int -> Float
+               durFlt dur bpm = (toFlt (/) 60  bpm) * (toFlt (/) (numerator dur) (denominator dur))
+
+usecWait :: Double -> CIO ()
+usecWait tPlay = -- TODO: Add check here. If stopped playing or bpm change, then break? Or maybe at bottom of fnct.
+  do now <- liftIO $ getTimeNow     -- TODO: Not ideal yet. Ideally burns no more than <1ms of CPU time, if none at all. Use better method?
+     if (tPlay - now) < 1   -- Sub ms
+       then do burnTime tPlay
+       else let diff           = floor $ max 0 (tPlay - now)
+                noMoreThan50ms = min 50 diff
+            in do wait noMoreThan50ms
+                  usecWait tPlay
+  where burnTime :: Double -> CIO ()
+        burnTime tPlay = do now <- liftIO getTimeNow  
+                            if now > tPlay then return ()
+                              else do burnTime tPlay
+
+getTimeNow :: IO Double
+getTimeNow
+  = do jsPerformanceNow
 
 midiLoadPlugin :: IO ()
 midiLoadPlugin
@@ -728,6 +757,12 @@ quadraticCurve :: Point -> Point -> Point -> Shape ()
 quadraticCurve (x1,y1) (x2,y2) (cpx,cpy) = Shape $ \ctx -> do
   jsMoveTo ctx x1 y1
   jsQuadraticCurveTo ctx cpx cpy x2 y2
+
+
+data Canvas' = Canvas' !Ctx !Elem
+clearRect :: Canvas -> Int -> Int -> Int -> Int -> IO ()  -- TODO: Remove unsafe coerce
+clearRect c x y w h = let (Canvas' ctx _) = unsafeCoerce c :: Canvas'
+                      in jsClearRect ctx x y w h
 
 -- Javascript headers
 jsHeader :: Perch
