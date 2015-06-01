@@ -14,6 +14,8 @@ The project is broken down into the following parts:
    * Music.hs: This defines haskell type which is used by HTML canvas. 
 
 Short term project goal was to parse demo-score.xml and create a canvas that looked like demo-score.png.
-
-
 Long term project goal was to parse MusicXML and pass [test cases](http://lilypond.org/doc/v2.19/input/regression/musicxml/collated-files#test-cases)
+
+Similar projects: 
+ * (music-suite)[http://music-suite.github.io/docs/ref/] is a haskell based music language. It can plug into lilypond for graphical display.
+ * (alphaTab)[http://www.alphatab.net/] ((github)[https://github.com/CoderLine/alphaTab]) is a music notation rendering library. It can play in browser with HTML5/Flash
