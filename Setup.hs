@@ -32,6 +32,7 @@ import Debug.Trace
 import Control.Monad.IO.Class
 import Control.Monad
 import Control.Exception (evaluate)
+import Control.Monad.Trans.Maybe
 import Prelude hiding(id,div)
 import GHC.Float
 -- import Music -- BUG
@@ -386,8 +387,8 @@ playMusic hgltInfo ds ctxt =
   case getLTDataRestMaybe ds of
    Just (d', ds') -> do ctxt' <- playHgltUpd hgltInfo ctxt d'
                         playMusic hgltInfo ds' ctxt'
-   Nothing        -> do putMVar hgltInfo (True, BoxCoor 0 0 0 0) -- BUG: There needs to be delay here somehow. Otherwise the last note does not get highlighted.
-                        return ()
+   Nothing        -> do putMVar hgltInfo Nothing -- BUG: There needs to be delay here somehow. Otherwise the last note does not get highlighted.
+                        return ()   
 
 -- TODO: 1) Add delay between notes 2) Factor in bpm change and delay (absolute time stamp changes if bpm changes) 3) highlight on/off 4) Concurrency
 -- playHgltUpd :: MidiContext -> GraphicMusicElm -> Widget MidiContext
@@ -395,27 +396,25 @@ playHgltUpd hgltInfo ctxt d =
   case d of
    GMNoteElm h p ns -> do t <- liftIO $ liftM (250+) getTimeNow
                           midiPlayNotes t 0 ctxt ns   -- NOTE: Might be faster to noteOn all notes, then noteOff them, instead of alternating
-                          putMVar hgltInfo (False, h) 
+                          putMVar hgltInfo (Just h) 
                           return ctxt
    GMRestElm h p    -> do wait 250
-                          putMVar hgltInfo (False, h)  -- TODO: Make this maybe type
+                          putMVar hgltInfo (Just h)
                           return ctxt
    GMCtxtElm ctxt'  -> return ctxt'
 
-hgltNotesRests :: Canvas -> MVar (Bool, HgltBorder) -> CIO ()
+hgltNotesRests :: Canvas -> MVar (Maybe HgltBorder) -> CIO ()
 hgltNotesRests hgltCanv mHgltInfo = 
   do mHgltOld <- newMVar $ BoxCoor 0 0 0 0 
      go hgltCanv mHgltInfo mHgltOld 
-       where go hgltCanv mHgltInfo mHgltOld = 
-               do (exit, hgltNew) <- takeMVar mHgltInfo
-                  hgltOld         <- takeMVar mHgltOld
-                  putMVar mHgltOld hgltNew
-                  if exit 
-                    then do liftIO $ removeHighlight hgltCanv hgltOld 
-                            return () 
-                    else do liftIO $ removeHighlight hgltCanv hgltOld 
-                            liftIO $ renderOnTop hgltCanv $ rendHighlight (RGBA 255 0 0 0.3) hgltNew
-                            go hgltCanv mHgltInfo mHgltOld
+       where go hgltCanv mHgltInfo mHgltOld = do maybeHgltNew <- takeMVar mHgltInfo
+                                                 hgltOld      <- takeMVar mHgltOld
+                                                 liftIO $ removeHighlight hgltCanv hgltOld 
+                                                 case maybeHgltNew of
+                                                  Nothing      -> do return () 
+                                                  Just hgltNew -> do putMVar mHgltOld hgltNew
+                                                                     liftIO $ renderOnTop hgltCanv $ rendHighlight (RGBA 255 0 0 0.3) hgltNew
+                                                                     go hgltCanv mHgltInfo mHgltOld
 
 
 ----------------------------------------------------------------------------------------------------                      
@@ -732,7 +731,7 @@ usecWait tPlay = -- TODO: Add check here. If stopped playing or bpm change, then
                 noMoreThan50ms = min 50 diff
             in do wait noMoreThan50ms
                   usecWait tPlay
-  where burnTime :: Double -> CIO ()
+  where burnTime :: Double -> CIO ()           -- TODO: Maybe use this in feature based on suggestion from IRC chat: Window.requestAnimationFrame()
         burnTime tPlay = do now <- liftIO getTimeNow  
                             if now > tPlay then return ()
                               else do burnTime tPlay
