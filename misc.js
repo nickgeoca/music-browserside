@@ -17,4 +17,11 @@ function jsMidiNoteOn(channel, note, velocity, delay) {
 }    
 function jsMidiNoteOff(channel, note, delay) {
     MIDI.noteOff(channel, note, delay);
+}    
+function jsPerformanceNow() {
+    return performance.now();
+}
+
+function jsClearRect(ctx, x, y, w, h) {
+    ctx.clearRect(x,y,w,h);
 }
