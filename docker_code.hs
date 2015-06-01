@@ -83,9 +83,11 @@ scoreWidget score =
 
      do (appCanvas (canvasWidth, canvasHeight) (offsetX, offsetY) rndr scoreCanvasId hgltCanvasId) `fire` OnClick
      -- **********// Widget Event //**********
-     Just hgltCanv <- liftIO $ getCanvasById hgltCanvasId  -- BUG: Handle nothing case
-     Just (x,y) <- liftM clickCoor getEventData   -- BUG: Handle nothing case
-     playMusicRegion mgds (x, y) hgltCanv
+     mHgltCanv <- liftIO $ getCanvasById hgltCanvasId
+     mXY <- liftM clickCoor getEventData
+     case (mHgltCanv, mXY) of
+      (Nothing,       Nothing)     -> return ()
+      (Just hgltCanv, Just (x, y)) -> do playMusicRegion mgds (x, y) hgltCanv
 
      -- wraw $ p << ((show x) ++" "++ (show y))
      -- let Just (_,mgds') = search (x,y) mgds 
@@ -111,25 +113,7 @@ scoreWidget score =
              toList LTNil = []
              toList (LTList d ds)                         = d : toList ds
              toList (LTTree (Branch l r (LTNode k ds d))) = d : toList ds
-{-
-             offsetHglt :: (Double, Double) -> ScoreRenderElm -> ScoreRenderElm
-             offsetHglt xy e = case e of 
-                                ScoreRendNotes h p ls  -> ScoreRendNotes (upd xy h) p ls
-                                ScoreRendRest  h p pic -> ScoreRendRest  (upd xy h) p pic 
-                                ScoreRendMod   p       -> ScoreRendMod   p     
-               where upd (x,y) (BoxCoor x1 y1 x2 y2) = let x' = round x
-                                                           y' = round y 
-                                                       in BoxCoor (x'+x1) (y'+y1) (x'+x2) (y'+y2)
 
-     {-
-     -- Highlighting
-     let xAdj = x - (round offsetX)
-     renderOnTop hgltCanv $ do
-       translate (offsetX, offsetY) $ do
-         sequence_ $ toHgltPics $ toHighlight $ toList mgds
-     -}
-
--}
 appCanvas :: (Int, Int) -> (Double, Double) -> [Picture ()] -> String -> String -> Widget ()
 appCanvas (sizeX,sizeY) (offsetX,offsetY) ps sId hId = 
   do wraw (do div ! id "canvasesdiv" 
@@ -137,19 +121,17 @@ appCanvas (sizeX,sizeY) (offsetX,offsetY) ps sId hId =
                    $ noHtml
                    `child` (canvasHtml sizeX sizeY sId 1)
                    `child` (canvasHtml sizeX sizeY hId 2))
-     -- Score canvas
-     -- center <<< wbutton "Draw Score" "Draw Score"         -- Play button
-     Just scoreCanvas <- liftIO $ getCanvasById sId  -- BUG: Handle nothing case
-     render scoreCanvas $ do 
-       translate (offsetX, offsetY) $ do 
-         staffShape (0,0) 100
-         sequence_ ps
-           where canvasdivStyle x y   = Haste.Perch.style ("position: relative; width: " ++ (show x) ++ "; height: " ++ (show y) ++ ";") 
-                 canvasHtml x y cId z = canvas ! id cId
-                                               ! Haste.Perch.style ("border: 1px solid black; z-index: "++ (show z) ++"; position: absolute; left: 0px; top: 0px;")
-                                               ! atr "width" (show x)
-                                               ! height (show y)
-                                               $ noHtml
+
+     Just scoreCanvas <- liftIO $ getCanvasById sId
+     render scoreCanvas $ do translate (offsetX, offsetY) $ do 
+                               staffShape (0,0) 100
+                               sequence_ ps
+  where canvasdivStyle x y   = Haste.Perch.style ("position: relative; width: " ++ (show x) ++ "; height: " ++ (show y) ++ ";") 
+        canvasHtml x y cId z = canvas ! id cId
+                                      ! Haste.Perch.style ("border: 1px solid black; z-index: "++ (show z) ++"; position: absolute; left: 0px; top: 0px;")
+                                      ! atr "width" (show x)
+                                      ! height (show y)
+                                      $ noHtml
 
 scoreToPics :: [ScoreRenderElm] -> [Picture ()]
 scoreToPics (x:xs) = case x of
