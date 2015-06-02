@@ -1,6 +1,6 @@
 Sheet music with playback using HTML Canvas. The project is extremely unfinished right now.
 
-Project [demo](http://raw.githubusercontent.com/nickgeoca/music-browserside/master/proj.html). Click through buttons, then in canvas, and then on a note. If canvas does not show up, try refreshing page.
+Project [demo](http://cdn.rawgit.com/nickgeoca/music-browserside/master/proj.html). Click through buttons, then in canvas, and then on a note. If canvas does not show up, try refreshing page.
 
 There is no server/browser communication. The parsed xml data is copied into the html based code.
 The project is broken down into the following parts:
