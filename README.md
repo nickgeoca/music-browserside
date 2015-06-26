@@ -5,8 +5,8 @@ Sheet music with playback using HTML Canvas. The project is extremely unfinished
  * Currently xml data is copied into the html based code.
 
 ### Useful Commands
-./copy_docker.py | xclip -selection c
-sudo docker run -it- -p 80:80 agocorona/tryhplay
+ * ./copy_docker.py | xclip -selection c
+ * sudo docker run -it- -p 80:80 agocorona/tryhplay
 
 ### Compile/Run HTML code
 1. git clone
@@ -19,9 +19,9 @@ Creates html from Haskell (Haste lib). Use this command to combine files: ./copy
  * docker_code.hs
    * Single file using docker. The Haste compiler was not working at the time.
    * Docker image: sudo docker run -it- -p 80:80 agocorona/tryhplay
- * Music.hs: This defines haskell type which is used by HTML canvas. 
  * Graphic.hs : Has graphic library for HTML canvas
  * ListTree.hs: Has library for ListTree data structure. Explained in file.
+ * Music.hs: This defines haskell type which is used by HTML canvas. 
 
 ### Server Side Files
 Parses MusicXML to create Music type used by HTML canvas
