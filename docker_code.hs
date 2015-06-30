@@ -23,7 +23,7 @@ import Data.Typeable
 import Data.Maybe
 import Data.Monoid  
 import Data.List
-import Data.Ord (comparing)
+import Data.Ord (compare, comparing)
 import Data.Function (on)
 -- import Data.Foldable hiding (sequence_, sum)
 import System.IO.Unsafe
@@ -128,13 +128,13 @@ appCanvas (sizeX,sizeY) (offsetX,offsetY) ps sId hId =
                                       $ noHtml
 
 scoreToPics :: [ScoreRenderElm] -> [Picture ()]
-scoreToPics (x:xs) = case x of
-                          ScoreRendNotes _ _ ls -> extract ls ++ scoreToPics xs
-                          ScoreRendRest  _ _ p  -> p          :  scoreToPics xs
-                          ScoreRendMod       p  -> p          :  scoreToPics xs
-  where extract (x:xs) = snd x : extract xs
-        extract []     = []
-scoreToPics []     = []
+scoreToPics xs = let pss = map toPics xs
+                 in  concat pss
+  where toPics :: ScoreRenderElm -> [Picture ()]
+        toPics x = case x of
+                    ScoreRendNotes _ _ ls -> map snd ls
+                    ScoreRendRest  _ _ p  -> [p]
+                    ScoreRendMod       p  -> [p]
 
 -- 1) Remove rests on identical beat as notes, but not the rests that are on same beat as modification elmements.
 -- 2) Keep Position in ScoreRenderElm. This will be used for midi timings.
@@ -142,17 +142,14 @@ scoreToPics []     = []
 -- 4) Build ListTree. Use ScoreRendMod as the tree nodes, and notes/rests as the list elements        
 scoreToMGDS :: [ScoreRenderElm] -> MidiHgltDS
 scoreToMGDS xs = let xs1 = removeRestWhenSameBeatAsNote xs
-                     xs2 = toGMList xs1  
+                     xs2 = map rend2GMElm xs1  
                      ds1 = createTree xs2 20
-                 in ds1
-  where toGMList :: [ScoreRenderElm] -> [GraphicMusicElm]
-        toGMList (x:xs) = case x of
-                           ScoreRendNotes h p ls -> GMNoteElm h p (extract ls) : toGMList xs
-                           ScoreRendRest  h p _  -> GMRestElm h p              : toGMList xs
-                           ScoreRendMod       _  -> toGMList xs  -- BUG: Want to keep some modifiers, but removing all for now
-          where extract (x:xs) = fst x : extract xs
-                extract []     = []
-        toGMList []     = []
+                 in  ds1
+  where rend2GMElm :: ScoreRenderElm -> GraphicMusicElm
+        rend2GMElm x = case x of
+                        ScoreRendNotes h p ls -> GMNoteElm h p (map fst ls)
+                        ScoreRendRest  h p _  -> GMRestElm h p
+                        ScoreRendMod       _  -> GMCtxtElm $ MidiContext {mVol = 127, mBpm = 60}  -- BUG: Want to keep some modifiers, but removing all for now
 
 createTree :: [GraphicMusicElm] -> Int -> MidiHgltDS
 createTree xs n = let addNodes = dsAddNodes n n (MidiContext 127 60) (BoxCoor 0 0 0 0) 
@@ -169,25 +166,11 @@ dsAddNodes n m midi lastHglt (LTList d ds) =
      then LTTree $ Branch Nothing Nothing $ LTNode newHglt go (GMCtxtElm newMidi) -- newMidi isn't needed b/c it will be on next node, but w/e. This is for LTTree case
      else LTList d $ dsAddNodes n m' newMidi newHglt ds
 
-
-search :: (Int,Int) -> MidiHgltDS -> Maybe (MidiContext, MidiHgltDS)
-search key ds = search' key ds (MidiContext 127 60)  -- TODO: Make a default midicontext here. Or some alterantive method
-
--- TODO: Need to pick up the local contexts in this function
-search' :: (Int,Int) -> MidiHgltDS -> MidiContext -> Maybe (MidiContext, MidiHgltDS)
-search' key (LTTree (Branch _ _(LTNode h ds d))) ctxt = let ctxt' = fromMaybe ctxt (getMidiContext d) 
-                                                        in if pointInBox key h  
-                                                           then Just (ctxt', ds)
-                                                           else search' key ds ctxt'
-search' key (LTList d ds) ctxt = case getHgltBorder d of
-                                  Just h  -> if pointInBox key h  
-                                             then Just (ctxt, ds)
-                                             else search' key ds ctxt
-                                  Nothing ->      search' key ds ctxt
-search' _ LTNil _ = Nothing
-
-pointInBox (x,y) (BoxCoor x1 y1 x2 y2) =
-  if x >= x1 && x < x2 && y >= y1 && y < y2 then True else False
+pointInBox (x,y) (BoxCoor bcX1 bcY1 bcX2 bcY2) =
+  x >= bcX1 && 
+  y >= bcY1 && 
+  x <  bcX2 && 
+  y <  bcY2
 
 dsLinkNodes ds = ds  -- TODO: Needs work
 
@@ -201,27 +184,9 @@ rendHighlight :: Color -> BoxCoor -> Picture ()
 rendHighlight c bc = color c $ fill $
                       do rect (fromIntegral $ x1Coor bc, fromIntegral $ y1Coor bc) 
                               (fromIntegral $ x2Coor bc, fromIntegral $ y2Coor bc) 
--- removeHighlight :: Color -> BoxCoor -> Picture ()    
+
+removeHighlight :: Canvas -> BoxCoor -> IO ()  
 removeHighlight canv (BoxCoor x1 y1 x2 y2) = clearRect canv x1 y1 (x2-x1) (y2-y1)
--- render canv $ fill $     -- TODO: Use js clearRect() instead
---                      do rect (0, 0) 
---                              (0, 0) 
-
-----------------------------------------------------------------------------------------------------                      
--- Random types. Better organize
-----------------------------------------------------------------------------------------------------  
-data ScoreRenderElm = ScoreRendNotes HgltBorder Position    [(MidiNote, Picture ())] |
-                      ScoreRendRest  HgltBorder Position     (Picture ())            |
-                      ScoreRendMod                        (Picture ())
-
--- NOTE: Double vs Int, speed/canvas-errors
--- NOTE: Watch int errors here
-data BoxCoor = BoxCoor {
-  x1Coor :: Int, y1Coor :: Int,
-  x2Coor :: Int, y2Coor :: Int
-  } deriving (Show,Read)
-
-type HgltBorder = BoxCoor
 
 
 ----------------------------------------------------------------------------------------------------                      
@@ -273,7 +238,7 @@ notMidiCtxt _ = True
 
 -- playMusicRegion :: MidiHgltDS -> (Int, Int) -> Widget ()
 -- playMusicRegion ds xy = playMusic ds $ MidiContext 127 60
- --BUG: Add the comment back in
+-- BUG: Add the comment back in
 playMusicRegion :: MidiHgltDS -> (Int, Int) -> Canvas -> Widget ()
 playMusicRegion ds xy hgltCanv = -- playMusic ds $ MidiContext 127 60
   case search xy ds of  
@@ -317,9 +282,6 @@ hgltNotesRests hgltCanv mHgltInfo =
                                                                      go hgltCanv mHgltInfo mHgltOld
 
       
-----------------------------------------------------------------------------------------------------                      
--- Javascript API
-----------------------------------------------------------------------------------------------------
 midiPlayNote :: Int -> MidiContext -> MidiNote -> IO ()
 midiPlayNote chnl (MidiContext vol bpm) (MidiNote dur pitch) -- TODO: dynamic bpm integration 
   = let toFlt f a b = f (fromIntegral a) (fromIntegral b) 
@@ -378,8 +340,9 @@ midiNoteOff :: Int -> Int -> Float -> IO ()
 midiNoteOff channel pitch delay
   = do jsMidiNoteOff channel pitch delay
         
-
--- Javascript headers
+----------------------------------------------------------------------------------------------------                      
+-- JS headers
+----------------------------------------------------------------------------------------------------
 jsHeader :: Perch
 jsHeader = (   script ! atr "type" "text/javascript" ! src "https://rawgit.com/mudcube/MIDI.js/master/inc/shim/Base64.js" $ noHtml)
            <> (script ! atr "type" "text/javascript" ! src "https://rawgit.com/mudcube/MIDI.js/master/inc/shim/Base64binary.js" $ noHtml)
